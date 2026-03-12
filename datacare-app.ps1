@@ -786,15 +786,12 @@ try {
     }
 
     foreach ($report in $ReportTables.GetEnumerator()) {
-
         $reportName = $report.Key
         $createQuery = $report.Value
         $tableName = "dbo.$reportName"
 
         $count = Get-ReportCountFromDb -ReportName $reportName
-
         if ($count -gt 0) {
-
             Write-Log "Number of records in $tableName : $count. Dropping and recreating $tableName table..." Yellow
 
             $dropQuery = "IF OBJECT_ID('$tableName','U') IS NOT NULL DROP TABLE $tableName;"
