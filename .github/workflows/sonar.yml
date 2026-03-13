@@ -20,15 +20,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # --- Install Java automatically ---
       - name: Setup Java 17
         uses: actions/setup-java@v3
         with:
           distribution: temurin
-          java-version: 17   # cambia a 20 se vuoi usare Java 20
+          java-version: 17   # puoi cambiare a 20 se vuoi
 
       - name: Verify Java
+        shell: pwsh
         run: |
-          echo JAVA_HOME=%JAVA_HOME%
+          Write-Host "JAVA_HOME = $Env:JAVA_HOME"
           java -version
 
       - name: Cache Sonar packages
@@ -37,10 +39,12 @@ jobs:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
 
+      # --- Run SonarCloud ---
       - name: SonarCloud Scan (verbose)
+        shell: pwsh
         run: |
-          echo Using JAVA_HOME: %JAVA_HOME%
-          set PATH=%JAVA_HOME%\bin;%PATH%
+          Write-Host "Using JAVA_HOME: $Env:JAVA_HOME"
+          $Env:PATH = "$Env:JAVA_HOME\bin;$Env:PATH"
           sonar-scanner.bat -X
         env:
           SONAR_PROJECT_KEY: andremagna_datacare
