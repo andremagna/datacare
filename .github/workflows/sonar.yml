@@ -17,10 +17,11 @@ jobs:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
     steps:
+      # 1️⃣ Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # --- Install Java automatically ---
+      # 2️⃣ Setup Java (17 o 20)
       - name: Setup Java 17
         uses: actions/setup-java@v3
         with:
@@ -33,19 +34,18 @@ jobs:
           Write-Host "JAVA_HOME = $Env:JAVA_HOME"
           java -version
 
+      # 3️⃣ Cache Sonar packages
       - name: Cache Sonar packages
         uses: actions/cache@v4
         with:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
 
-      # --- Run SonarCloud ---
-      - name: SonarCloud Scan (verbose)
-        shell: pwsh
-        run: |
-          Write-Host "Using JAVA_HOME: $Env:JAVA_HOME"
-          $Env:PATH = "$Env:JAVA_HOME\bin;$Env:PATH"
-          sonar-scanner.bat -X
+      # 4️⃣ SonarCloud Scan (non serve installare manualmente sonar-scanner)
+      - name: SonarCloud Scan
+        uses: sonarsource/sonarqube-scan-action@v6
+        with:
+          projectBaseDir: '.'   # root del repo
         env:
           SONAR_PROJECT_KEY: andremagna_datacare
           SONAR_ORGANIZATION: andremagna
