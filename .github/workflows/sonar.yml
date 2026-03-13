@@ -14,7 +14,7 @@ jobs:
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # forza Node.js 24
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # il token SonarCloud dal repo secret
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # token SonarCloud dal repo secret
 
     steps:
       - name: Checkout repository
@@ -24,7 +24,10 @@ jobs:
         uses: actions/setup-java@v3
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 17   # cambia a 20 se vuoi usare Java 20
+
+      - name: Verify Java
+        run: java -version
 
       - name: Cache Sonar packages
         uses: actions/cache@v4
@@ -35,8 +38,8 @@ jobs:
       - name: SonarCloud Scan
         uses: sonarsource/sonarqube-scan-action@v6
         with:
-          projectBaseDir: '.'   # la root del repo
+          projectBaseDir: '.'   # root del repo
         env:
-          SONAR_PROJECT_KEY: andremagna_datacare   # inserisci il tuo Project Key
-          SONAR_ORGANIZATION: andremagna       # inserisci la tua Organization
+          SONAR_PROJECT_KEY: andremagna_datacare
+          SONAR_ORGANIZATION: andremagna
           SONAR_HOST_URL: https://sonarcloud.io
