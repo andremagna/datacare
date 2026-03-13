@@ -13,32 +13,41 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      # 1️⃣ Checkout repository
+      # 1) Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2️⃣ Setup Java 17
+      # 2) Setup Java
       - name: Setup Java 17
         uses: actions/setup-java@v3
         with:
           distribution: temurin
-          java-version: 17   # puoi cambiare a 20 se vuoi
+          java-version: 17
 
-      # 3️⃣ Verify Java installation
       - name: Verify Java
         shell: pwsh
         run: |
           Write-Host "JAVA_HOME = $Env:JAVA_HOME"
           java -version
 
-      # 4️⃣ Cache Sonar packages
+      # 3) Cache Sonar packages
       - name: Cache Sonar packages
         uses: actions/cache@v4
         with:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
 
-      # 5️⃣ SonarCloud Scan (Action ufficiale)
+      # 4) DEBUG — print secrets to verify values
+      - name: Debug Sonar secrets
+        shell: pwsh
+        run: |
+          Write-Host ">>>> SONAR_PROJECT_KEY = $Env:SONAR_PROJECT_KEY"
+          Write-Host ">>>> SONAR_ORGANIZATION = $Env:SONAR_ORGANIZATION"
+        env:
+          SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
+          SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
+
+      # 5) SonarCloud Scan
       - name: SonarCloud Scan
         uses: sonarsource/sonarqube-scan-action@v6
         with:
