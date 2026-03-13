@@ -12,21 +12,15 @@ jobs:
   sonar:
     runs-on: windows-latest
 
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
     steps:
-      # 1️⃣ Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2️⃣ Setup Java (17 o 20)
       - name: Setup Java 17
         uses: actions/setup-java@v3
         with:
           distribution: temurin
-          java-version: 17   # puoi cambiare a 20 se vuoi
+          java-version: 17
 
       - name: Verify Java
         shell: pwsh
@@ -34,20 +28,18 @@ jobs:
           Write-Host "JAVA_HOME = $Env:JAVA_HOME"
           java -version
 
-      # 3️⃣ Cache Sonar packages
       - name: Cache Sonar packages
         uses: actions/cache@v4
         with:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
 
-      # 4️⃣ SonarCloud Scan (action ufficiale)
       - name: SonarCloud Scan
         uses: sonarsource/sonarqube-scan-action@v6
         with:
-          projectBaseDir: '.'   # root del repo
+          projectBaseDir: '.'
         env:
-          SONAR_PROJECT_KEY: andremagna_datacare
-          SONAR_ORGANIZATION: andremagna
+          SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
+          SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
           SONAR_HOST_URL: https://sonarcloud.io
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
