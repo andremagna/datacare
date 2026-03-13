@@ -10,11 +10,11 @@ on:
 
 jobs:
   sonar:
-    runs-on: windows-latest   # Windows 11 runner
+    runs-on: windows-latest
 
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # forza Node.js 24
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # token SonarCloud dal repo secret
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
     steps:
       - name: Checkout repository
@@ -27,7 +27,9 @@ jobs:
           java-version: 17   # cambia a 20 se vuoi usare Java 20
 
       - name: Verify Java
-        run: java -version
+        run: |
+          echo JAVA_HOME=%JAVA_HOME%
+          java -version
 
       - name: Cache Sonar packages
         uses: actions/cache@v4
@@ -35,11 +37,13 @@ jobs:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
 
-      - name: SonarCloud Scan
-        uses: sonarsource/sonarqube-scan-action@v6
-        with:
-          projectBaseDir: '.'   # root del repo
+      - name: SonarCloud Scan (verbose)
+        run: |
+          echo Using JAVA_HOME: %JAVA_HOME%
+          set PATH=%JAVA_HOME%\bin;%PATH%
+          sonar-scanner.bat -X
         env:
           SONAR_PROJECT_KEY: andremagna_datacare
           SONAR_ORGANIZATION: andremagna
           SONAR_HOST_URL: https://sonarcloud.io
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
