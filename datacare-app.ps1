@@ -79,9 +79,9 @@
 # ======================
 
 $Config = @{
-    TenantId     = "76ff1baa-3307-46aa-a752-cc3736d8a2b2"
-    ClientId     = "dd80738f-6094-43ff-bf26-03fe4e3bc7da"
-    ClientSecret = "Us58Q~60OyDwuVZB2CyjyYzJfkHg0_.uL3XKXcag"
+    TenantId     = "76ff1baa-3307-46aa-a752-cc3736d8a2b2" #your_credential
+    ClientId     = "dd80738f-6094-43ff-bf26-03fe4e3bc7da" #your_credential
+    ClientSecret = "Us58Q~60OyDwuVZB2CyjyYzJfkHg0_.uL3XKXcag" #your_credential
 
     Sql = @{
         Server      = "localhost\SQLEXPRESS"
@@ -793,14 +793,11 @@ try {
         $count = Get-ReportCountFromDb -ReportName $reportName
         if ($count -gt 0) {
             Write-Log "Number of records in $tableName : $count. Dropping and recreating $tableName table..." Yellow
-
             $dropQuery = "IF OBJECT_ID('$tableName','U') IS NOT NULL DROP TABLE $tableName;"
             Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $dropQuery
-
             Write-Log "$tableName table dropped successfully." Green
 
             Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $createQuery
-
             Write-Log "Table '$tableName' created successfully" Green
         }
     }
@@ -846,7 +843,6 @@ try {
                                 Write-Log "UPN is empty" -ForegroundColor Yellow
                                 continue
                             }
-
                             $EncodedUpn = [System.Uri]::EscapeDataString($UserPrincipalName)
                             $Url = "https://graph.microsoft.com/v1.0/users/"+$EncodedUpn+"?`$select=department"
 
@@ -935,7 +931,6 @@ try {
                             -RowsInserted $Data.Count `
                             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
                     }
-                    #case: onedrive
                     elseif ($ReportName -eq "OneDrive") {
                         foreach ($Row in $Data) {
                             $ReportRefreshDate = ($Row.PSObject.Properties |
@@ -1024,7 +1019,6 @@ try {
                             -RowsInserted $Data.Count `
                             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
                     }
-                    #case: sharepoint and teams
                     else {
                         Write-Log "Writing $ReportName records into SQLServer ..." -ForegroundColor Cyan
                             
@@ -1059,7 +1053,7 @@ try {
         }
     }
 
-    #STEP 2: DBO.USERS
+    #STEP 2: users
     $AllUsers = @()
     $UsersTable = "Users"
     $Url = "https://graph.microsoft.com/v1.0/users"
