@@ -41,7 +41,7 @@ jobs:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
 
-      # 4️⃣ SonarCloud Scan (non serve installare manualmente sonar-scanner)
+      # 4️⃣ SonarCloud Scan (action ufficiale)
       - name: SonarCloud Scan
         uses: sonarsource/sonarqube-scan-action@v6
         with:
