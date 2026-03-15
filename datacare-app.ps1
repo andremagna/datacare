@@ -777,6 +777,9 @@ try {
 
     Initialize-Database
 
+    $TotalRowsRetrieved = 0
+    $TotalRowsInserted  = 0
+
     $ReportTables = @{
         Exchange   = $Config.Sql.CreateTable_Exchange
         OneDrive   = $Config.Sql.CreateTable_OneDrive
@@ -832,6 +835,9 @@ try {
             if ($Response) {
                 $Data = $Response | ConvertFrom-Csv
                 if ($Data -and $Data.Count -gt 0) {
+                    $RowsRetrievedExchange = 0
+                    $RowsRetrievedOneDrive = 0
+                    $RowsInserted  = 0
                     if ($ReportName -eq "Exchange") {
                         foreach ($Row in $Data) {
                             $ReportRefreshDate = ($Row.PSObject.Properties |
@@ -883,6 +889,7 @@ try {
 
                                         Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
                                         Write-ToSqlTable -TableName "Exchange" -Data @($combinedObject)
+                                        $RowsInserted++
                                     }
                                     catch {
                                         Write-Log "Deep stats failed for $UserPrincipalName : $($_.Exception.Message)" -ForegroundColor Yellow
@@ -916,19 +923,21 @@ try {
 
                                     Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
                                     Write-ToSqlTable -TableName $ReportName -Data @($combinedObject)   
+                                    $RowsInserted++
                                 }
                             } 
                             catch {
                                 Write-Log "Error while recovering department for $UserPrincipalName : $_" -ForegroundColor Yellow
                             }
                         }
+                        $RowsRetrievedExchange = $Data.Count
 
                         Write-ExecutionLog `
                             -ExecutionId $ExecutionId `
                             -ReportName $ReportName `
                             -Status "SUCCESS" `
                             -RowsRetrieved $Data.Count `
-                            -RowsInserted $Data.Count `
+                            -RowsInserted $RowsInserted `
                             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
                     }
                     elseif ($ReportName -eq "OneDrive") {
@@ -977,6 +986,7 @@ try {
 
                                     Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
                                     Write-ToSqlTable -TableName $ReportName -Data @($combinedObject) 
+                                    $RowsInserted++
                                 }
                                 else {
                                     Write-Host "Users $UserPrincipalName not in department: $($Config.Execution.Department)"
@@ -1004,19 +1014,22 @@ try {
                                         }
 
                                     Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
-                                    Write-ToSqlTable -TableName $ReportName -Data @($combinedObject)   
+                                    Write-ToSqlTable -TableName $ReportName -Data @($combinedObject) 
+                                    $RowsInserted++  
                                 }
                             } 
                             catch {
                                 Write-Log "Error while recovering department for $UserPrincipalName : $_" -ForegroundColor Yellow
                             }
                         }
+                        $RowsRetrievedOneDrive = $Data.Count
+
                         Write-ExecutionLog `
                             -ExecutionId $ExecutionId `
                             -ReportName $ReportName `
                             -Status "SUCCESS" `
                             -RowsRetrieved $Data.Count `
-                            -RowsInserted $Data.Count `
+                            -RowsInserted $RowsInserted `
                             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
                     }
                     else {
@@ -1031,7 +1044,16 @@ try {
                             -RowsRetrieved $Data.Count `
                             -RowsInserted $Data.Count `
                             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
-                    }         
+
+                        $OthersInserted = $Data.Count
+                        $OthersRetrieved = $Data.Count
+                    }
+                    $TotalRowsRetrieved += $RowsRetrievedExchange
+                    $TotalRowsRetrieved += $RowsRetrievedOneDrive
+                    $TotalRowsRetrieved += $OthersRetrieved
+
+                    $TotalRowsInserted += $RowsInserted
+                    $TotalRowsInserted += $OthersInserted
                 }
                 else {
                     Write-Log "No data returned for $ReportName" -ForegroundColor Yellow
@@ -1110,8 +1132,8 @@ try {
             -ExecutionId $ExecutionId `
             -ReportName "TOTAL" `
             -Status "SUCCESS" `
-            -RowsRetrieved 0 `
-            -RowsInserted 0 `
+            -RowsRetrieved ($TotalRowsRetrieved + $UserData.Count) `
+            -RowsInserted ($TotalRowsInserted + $UserData.Count) `
             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
     
     Write-Log "=== END DATACARE EXE ===" -ForegroundColor Green
