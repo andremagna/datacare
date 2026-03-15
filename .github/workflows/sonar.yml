@@ -1,19 +1,47 @@
-name: SonarCloud
+name: SonarCloud PowerShell Scan
 
 on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
   sonar:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
-      - name: Checkout code
+      # 1) Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2) Setup Java 17
+      - name: Setup Java 17
+        uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # 3) Verify Java installation
+      - name: Verify Java
+        shell: pwsh
+        run: |
+          Write-Host "JAVA_HOME = $Env:JAVA_HOME"
+          java -version
+
+      # 4) Cache Sonar packages
+      - name: Cache Sonar packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+
+      # 5) SonarCloud Scan
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@v2
+        uses: sonarsource/sonarqube-scan-action@v6
+        with:
+          projectBaseDir: '.'                     # Root of your repo
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
