@@ -60,11 +60,11 @@
     1. Open PowerShell with admin privileges
     2. Navigate to the script folder
     3. Set SecretManagement and SecretStore properties:
-        - Register-SecretVault `
-            -Name LocalVault `
-            -ModuleName Microsoft.PowerShell.SecretStore `
-            -DefaultVault
-        - Set-Secret -Name GraphClientSecret -Secret "my-secret"   
+        3.1 Register-SecretVault `
+                -Name LocalVault `
+                -ModuleName Microsoft.PowerShell.SecretStore `
+                -DefaultVault
+        3.2 Set-Secret -Name GraphClientSecret -Secret "my-secret"   
     4. Run the command: .\datacare-app.ps1
     5. Enter the required credentials
 
@@ -79,11 +79,9 @@
     1.0.0
 #>
 
-
 # ======================
 #     CONFIGURATIONS
 # ======================
-
 $Config = @{
     TenantId     = "76ff1baa-3307-46aa-a752-cc3736d8a2b2" #your_tenantId
     ClientId     = "dd80738f-6094-43ff-bf26-03fe4e3bc7da" #your_clientId
@@ -354,7 +352,6 @@ function Convert-ToBytes {
     param([string]$SizeString)
 
     if (-not $SizeString) { return 0 }
-
     if ($SizeString -match '\((\d[\d,]*) bytes\)') {
         return [Int64]($matches[1] -replace ',', '')
     }
@@ -525,7 +522,6 @@ IF DB_ID(N'$($Config.Sql.SqlDBTarget)') IS NULL
     }
 
     foreach ($table in $tables.GetEnumerator()) {
-
         $tableName = $table.Key
         $createSql = $table.Value
 
@@ -537,11 +533,9 @@ IF DB_ID(N'$($Config.Sql.SqlDBTarget)') IS NULL
             Select-Object -ExpandProperty Column1
 
         if ($exists -eq 1) {
-
             Write-Log "Table '$tableName' already exists"
         }
         else {
-
             Invoke-Sqlcmd `
                 -ConnectionString $targetConnectionString `
                 -Query $createSql
@@ -549,7 +543,6 @@ IF DB_ID(N'$($Config.Sql.SqlDBTarget)') IS NULL
             Write-Log "Table '$tableName' created successfully" Green
         }
     }
-
     Write-Log "Database initialization completed" Green
 }
 
@@ -571,7 +564,6 @@ function Write-ToSqlTable {
     }
 
     try {
-
         $connection = New-Object System.Data.SqlClient.SqlConnection($targetConnectionString)
         $connection.Open()
 
@@ -655,7 +647,6 @@ function Write-ToSqlTable {
                     $dr[$sqlCol] = [DBNull]::Value
                 }
             }
-
             $table.Rows.Add($dr)
         }
 
@@ -699,13 +690,10 @@ function Get-ReportCountFromDb {
         }
 
         $tableName = $tableMap[$ReportName]
-
         $query = "SELECT COUNT(*) AS Total FROM $tableName"
-
         $result = Invoke-Sqlcmd `
             -ConnectionString $targetConnectionString `
             -Query $query
-
         return [int]$result.Total
     }
     catch {
@@ -734,7 +722,6 @@ function Get-GraphAccessToken {
             -ContentType "application/x-www-form-urlencoded"
 
         Write-Log "Graph token acquired" Green
-
         return $response.access_token
     }
     catch {
@@ -831,7 +818,6 @@ try {
 
     foreach ($ReportName in $Reports.Keys) {
         Write-Log "CASE: $ReportName" -ForegroundColor Cyan
-
         try {
             $Response = Invoke-GraphRequest -Url $Reports[$ReportName] -Headers $ReportHeaders
             if ($Response) {
@@ -864,7 +850,7 @@ try {
                                     try {
                                         $deepStats = Get-ExchangeMailboxDeepStats -UserPrincipalName $UserPrincipalName
 
-                                        $combinedObject = [PSCustomObject]@{
+                                        $exchangeObject = [PSCustomObject]@{
                                             displayName                 = $Row.'Display Name'
                                             userPrincipalName           = $Row.'User Principal Name'
                                             mail                        = $Row.'User Principal Name'
@@ -886,11 +872,11 @@ try {
                                             Report_Period               = $Row.'Report Period'
                                         }
                                         foreach ($key in $deepStats.Keys) {
-                                            $combinedObject | Add-Member -NotePropertyName $key -NotePropertyValue $deepStats[$key] -Force
+                                            $exchangeObject | Add-Member -NotePropertyName $key -NotePropertyValue $deepStats[$key] -Force
                                         }
 
                                         Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
-                                        Write-ToSqlTable -TableName "Exchange" -Data @($combinedObject)
+                                        Write-ToSqlTable -TableName "Exchange" -Data @($exchangeObject)
                                         $RowsInserted++
                                     }
                                     catch {
@@ -901,7 +887,7 @@ try {
                                     Write-Host "Users $UserPrincipalName not in department: $($Config.Execution.Department)"
                                     $OtherDepartment = "Other"
 
-                                    $combinedObject = [PSCustomObject]@{
+                                    $exchangeObject = [PSCustomObject]@{
                                             displayName                 = $Row.'Display Name'
                                             userPrincipalName           = $Row.'User Principal Name'
                                             mail                        = $Row.'User Principal Name'
@@ -924,7 +910,7 @@ try {
                                         }
 
                                     Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
-                                    Write-ToSqlTable -TableName $ReportName -Data @($combinedObject)   
+                                    Write-ToSqlTable -TableName $ReportName -Data @($exchangeObject)   
                                     $RowsInserted++
                                 }
                             } 
@@ -938,7 +924,7 @@ try {
                             -ExecutionId $ExecutionId `
                             -ReportName $ReportName `
                             -Status "SUCCESS" `
-                            -RowsRetrieved $Data.Count `
+                            -RowsRetrieved $RowsRetrievedExchange `
                             -RowsInserted $RowsInserted `
                             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
                     }
@@ -953,7 +939,6 @@ try {
                                 Write-Log "UPN is empty" -ForegroundColor Yellow
                                 continue
                             }
-
                             $EncodedUpn = [System.Uri]::EscapeDataString($UserPrincipalName)
                             $Url = "https://graph.microsoft.com/v1.0/users/"+$EncodedUpn+"?`$select=department"
 
@@ -965,7 +950,7 @@ try {
                                     Write-Host "Users $UserPrincipalName not in department: $($Config.Execution.Department)"
                                     $OtherDepartment = "Other"
 
-                                    $combinedObject = [PSCustomObject]@{
+                                    $oneDriveObject = [PSCustomObject]@{
                                         StorageUsedGB            = $StorageUsedGB
                                         ___Report_Refresh_Date   = $RefreshDate
                                         Site_Id                  = $Row.'Site Id'
@@ -987,14 +972,14 @@ try {
                                         }
 
                                     Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
-                                    Write-ToSqlTable -TableName $ReportName -Data @($combinedObject) 
+                                    Write-ToSqlTable -TableName $ReportName -Data @($oneDriveObject) 
                                     $RowsInserted++
                                 }
                                 else {
                                     Write-Host "Users $UserPrincipalName not in department: $($Config.Execution.Department)"
                                     $OtherDepartment = "Other"
 
-                                    $combinedObject = [PSCustomObject]@{
+                                    $oneDriveObject = [PSCustomObject]@{
                                         StorageUsedGB            = $StorageUsedGB
                                         ___Report_Refresh_Date   = $RefreshDate
                                         Site_Id                  = $Row.'Site Id'
@@ -1016,7 +1001,7 @@ try {
                                         }
 
                                     Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
-                                    Write-ToSqlTable -TableName $ReportName -Data @($combinedObject) 
+                                    Write-ToSqlTable -TableName $ReportName -Data @($oneDriveObject) 
                                     $RowsInserted++  
                                 }
                             } 
@@ -1025,20 +1010,17 @@ try {
                             }
                         }
                         $RowsRetrievedOneDrive = $Data.Count
-
                         Write-ExecutionLog `
                             -ExecutionId $ExecutionId `
                             -ReportName $ReportName `
                             -Status "SUCCESS" `
-                            -RowsRetrieved $Data.Count `
+                            -RowsRetrieved $RowsRetrievedOneDrive `
                             -RowsInserted $RowsInserted `
                             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
                     }
                     else {
                         Write-Log "Writing $ReportName records into SQLServer ..." -ForegroundColor Cyan
-                            
                         Write-ToSqlTable -TableName $ReportName -Data $Data                   
-
                         Write-ExecutionLog `
                             -ExecutionId $ExecutionId `
                             -ReportName $ReportName `
@@ -1064,7 +1046,6 @@ try {
         } 
         catch {
             Write-Log "Script failed to process $RepotName data: $($_.Exception.Message)" -ForegroundColor Red
-            
             Write-ExecutionLog `
                 -ExecutionId $ExecutionId `
                 -ReportName $ReportName `
@@ -1072,7 +1053,6 @@ try {
                 -RowsInserted 0 `
                 -Status "FAILED" `
                 -ErrorMessage $_.Exception.Message
-            
             throw
         }
     }
@@ -1094,30 +1074,37 @@ try {
     } while ($Url)
 
     try {
-        $UserData = $AllUsers | Select-Object `
-            id,
-            displayName,
-            userPrincipalName,
-            mail,
-            department,
-            jobTitle,
-            accountEnabled,
-            createdDateTime
-
-        Write-Log "Inserting users in dbo.Users ..." -ForegroundColor Cyan
-        Write-ToSqlTable -TableName $UsersTable -Data $UserData
+        
+        $RowsInserted = 0
+        foreach ($User in $AllUsers) {
+            Write-Log "Retrieving user $($User.userPrincipalName) details" -ForegroundColor Cyan
+            $userObject = [PSCustomObject]@{
+                id                = $User.id
+                displayName       = $User.displayName
+                userPrincipalName = $User.userPrincipalName
+                mail              = $User.mail
+                department        = $User.department
+                jobTitle          = $User.jobTitle
+                accountEnabled    = $User.accountEnabled
+                createdDateTime   = $User.createdDateTime
+            }
+            Write-Log "Writing $($User.userPrincipalName) details into SQLServer ..." -ForegroundColor Cyan
+            Write-ToSqlTable -TableName $UsersTable -Data $userObject
+            $RowsInserted++
+        }
+        $TotalRowsInsertedUsers = $RowsInserted
+        $TotalRowsRetrievedUsers = $AllUsers.Count
 
         Write-ExecutionLog `
             -ExecutionId $ExecutionId `
             -ReportName $UsersTable `
             -Status "SUCCESS" `
-            -RowsRetrieved $UserData.Count `
-            -RowsInserted $UserData.Count `
+            -RowsRetrieved $TotalRowsRetrievedUsers `
+            -RowsInserted $RowsInserted `
             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
     }
     catch {
         Write-Log "Script failed to process $UsersTable data: $($_.Exception.Message)" -ForegroundColor Red
-
         Write-ExecutionLog `
             -ExecutionId $ExecutionId `
             -ReportName $UsersTable `
@@ -1125,7 +1112,6 @@ try {
             -RowsRetrieved 0 `
             -RowsInserted 0 `
             -ErrorMessage $_.Exception.Message
-
         throw
     }
     
@@ -1133,13 +1119,14 @@ try {
             -ExecutionId $ExecutionId `
             -ReportName "TOTAL" `
             -Status "SUCCESS" `
-            -RowsRetrieved ($TotalRowsRetrieved + $UserData.Count) `
-            -RowsInserted ($TotalRowsInserted + $UserData.Count) `
+            -RowsRetrieved ($TotalRowsRetrieved + $TotalRowsRetrievedUsers) `
+            -RowsInserted ($TotalRowsInserted + $TotalRowsInsertedUsers) `
             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
     
     Write-Log "=== END DATACARE EXE ===" -ForegroundColor Green
 }
 catch {
+    Write-Log "SCRIPT FAILED: $($_.Exception.Message)" -ForegroundColor Red
     Write-ExecutionLog `
             -ExecutionId $ExecutionId `
             -ReportName "TOTAL" `
@@ -1147,8 +1134,5 @@ catch {
             -RowsRetrieved 0 `
             -RowsInserted 0 `
             -ErrorMessage $_.Exception.Message
-
-    Write-Log "SCRIPT FAILED: $($_.Exception.Message)" -ForegroundColor Red
-    
     throw
 }
