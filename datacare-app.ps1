@@ -59,8 +59,14 @@
 .EXECUTION
     1. Open PowerShell with admin privileges
     2. Navigate to the script folder
-    3. Run the command: .\datacare-app.ps1
-    4. Enter the required credentials
+    3. Set SecretManagement and SecretStore properties:
+        - Register-SecretVault `
+            -Name LocalVault `
+            -ModuleName Microsoft.PowerShell.SecretStore `
+            -DefaultVault
+        - Set-Secret -Name GraphClientSecret -Secret "my-secret"   
+    4. Run the command: .\datacare-app.ps1
+    5. Enter the required credentials
 
 .COPYRIGHT
     © 2026 Business Integration Partners. All rights reserved.
@@ -79,9 +85,8 @@
 # ======================
 
 $Config = @{
-    TenantId     = "76ff1baa-3307-46aa-a752-cc3736d8a2b2" #your_credential
-    ClientId     = "dd80738f-6094-43ff-bf26-03fe4e3bc7da" #your_credential
-    ClientSecret = "Us58Q~60OyDwuVZB2CyjyYzJfkHg0_.uL3XKXcag" #your_credential
+    TenantId     = "76ff1baa-3307-46aa-a752-cc3736d8a2b2" #your_tenantId
+    ClientId     = "dd80738f-6094-43ff-bf26-03fe4e3bc7da" #your_clientId
 
     Sql = @{
         Server      = "localhost\SQLEXPRESS"
@@ -242,7 +247,6 @@ $targetConnectionString = "Server=$($Config.Sql.Server);Database=$($Config.Sql.S
 
 
 
-
 # ======================
 #      FUNCTIONS
 # ======================
@@ -338,7 +342,6 @@ function Import-RequiredModule {
 
 # EXCHANGE
 function Connect-ExchangeAppOnly {
-
     Write-Log "Connecting to Exchange Online ..." -ForegroundColor Cyan
     Write-Log "Enter/Select your credentials to log in (MFA)..." -ForegroundColor Magenta
 
@@ -501,7 +504,6 @@ function Test-SqlConnection {
 }
 
 function Initialize-Database {
-
     Write-Log "Ensuring database $($Config.Sql.SqlDBTarget) exists..." Cyan
 
     $createDbQuery = @"
@@ -714,7 +716,6 @@ function Get-ReportCountFromDb {
 
 # ENTRAID
 function Get-GraphAccessToken {
-
     Write-Log "Requesting Microsoft Graph token..." Cyan
 
     $body = @{
@@ -725,9 +726,7 @@ function Get-GraphAccessToken {
     }
 
     $uri = "https://login.microsoftonline.com/$($Config.TenantId)/oauth2/v2.0/token"
-
     try {
-
         $response = Invoke-RestMethod `
             -Uri $uri `
             -Method POST `
@@ -769,6 +768,8 @@ try {
 
     Import-RequiredModule -ModuleName "SqlServer"
     Import-RequiredModule -ModuleName "ExchangeOnlineManagement"
+    Import-RequiredModule -ModuleName "Microsoft.PowerShell.SecretManagement"
+    Import-RequiredModule -ModuleName "Microsoft.PowerShell.SecretStore"
 
     if (-not (Test-SqlConnection)) {
         Write-Log "SQL connection failed." -ForegroundColor Red
@@ -805,6 +806,7 @@ try {
         }
     }
 
+    $Config.ClientSecret = Get-Secret GraphClientSecret -AsPlainText
     $AccessToken = Get-GraphAccessToken
     $ReportHeaders = @{
         Authorization = "Bearer $AccessToken"
@@ -1127,7 +1129,6 @@ try {
         throw
     }
     
-    # -RowsRetrieved e -RowsInserted da calcolare
     Write-ExecutionLog `
             -ExecutionId $ExecutionId `
             -ReportName "TOTAL" `
