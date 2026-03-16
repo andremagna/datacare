@@ -138,101 +138,79 @@ $Config = @{
             Archive_Recoverable_Mode NVARCHAR(50)
         );"
         CreateTable_OneDrive = "
-            IF OBJECT_ID('dbo.OneDrive','U') IS NULL
-            CREATE TABLE dbo.OneDrive (
-                StorageUsedGB FLOAT,
-                ___Report_Refresh_Date NVARCHAR(50),
-                Site_Id NVARCHAR(255),
-                Site_URL NVARCHAR(500),
-                Owner_Display_Name NVARCHAR(255),
-                Is_Deleted NVARCHAR(50),
-                Last_Activity_Date NVARCHAR(50),
-                File_Count INT,
-                Active_File_Count INT,
-                Storage_Used__Byte_ BIGINT,
-                Storage_Allocated__Byte_ BIGINT,
-                Owner_Principal_Name NVARCHAR(255) NOT NULL,
-                Department NVARCHAR(50),
-                Report_Period NVARCHAR(50),
-                ReportPeriod NVARCHAR(50),
-                ReportDate DATETIME2,
-                InsertedAt DATETIME2,
-                SourceReport NVARCHAR(100)
-            );"
+        IF OBJECT_ID('dbo.OneDrive','U') IS NULL
+        CREATE TABLE dbo.OneDrive (
+            StorageUsedGB FLOAT,
+            ___Report_Refresh_Date NVARCHAR(50),
+            Site_Id NVARCHAR(255),
+            Site_URL NVARCHAR(500),
+            Owner_Display_Name NVARCHAR(255),
+            Is_Deleted NVARCHAR(50),
+            Last_Activity_Date NVARCHAR(50),
+            File_Count INT,
+            Active_File_Count INT,
+            Storage_Used__Byte_ BIGINT,
+            Storage_Allocated__Byte_ BIGINT,
+            Owner_Principal_Name NVARCHAR(255) NOT NULL,
+            Department NVARCHAR(50),
+            Report_Period NVARCHAR(50),
+            ReportPeriod NVARCHAR(50),
+            ReportDate DATETIME2,
+            InsertedAt DATETIME2,
+            SourceReport NVARCHAR(100)
+        );"
         CreateTable_SharePoint = "
-            IF OBJECT_ID('dbo.SharePoint','U') IS NULL
-            CREATE TABLE dbo.SharePoint (
-                StorageUsedGB FLOAT,
-                ___Report_Refresh_Date NVARCHAR(50),
-                Site_Id NVARCHAR(255),
-                Site_URL NVARCHAR(500),
-                Owner_Display_Name NVARCHAR(255),
-                Is_Deleted NVARCHAR(50),
-                Last_Activity_Date NVARCHAR(50),
-                File_Count INT,
-                Active_File_Count INT,
-                Page_View_Count INT,
-                Visited_Page_Count INT,
-                Storage_Used__Byte_ BIGINT,
-                Storage_Allocated__Byte_ BIGINT,
-                Root_Web_Template NVARCHAR(100),
-                Owner_Principal_Name NVARCHAR(255) NOT NULL,
-                Report_Period NVARCHAR(50),
-                ReportPeriod NVARCHAR(50),
-                ReportDate DATETIME2,
-                InsertedAt DATETIME2,
-                SourceReport NVARCHAR(100)
-            );"
-        CreateTable_Teams = "
-            IF OBJECT_ID('dbo.Teams','U') IS NULL
-            CREATE TABLE dbo.Teams (
-                ___Report_Refresh_Date NVARCHAR(50),
-                User_Principal_Name NVARCHAR(255) NOT NULL,
-                Display_Name NVARCHAR(255),
-                Is_Deleted NVARCHAR(50),
-                Deleted_Date NVARCHAR(50),
-                Last_Activity_Date NVARCHAR(50),
-                Team_Chat_Message_Count INT,
-                Private_Chat_Message_Count INT,
-                Call_Count INT,
-                Meeting_Count INT,
-                Has_Other_Action NVARCHAR(50),
-                Report_Period NVARCHAR(50),
-                ReportPeriod NVARCHAR(50),
-                ReportDate DATETIME2,
-                InsertedAt DATETIME2,
-                SourceReport NVARCHAR(100)
-            );"
+        IF OBJECT_ID('dbo.SharePoint','U') IS NULL
+        CREATE TABLE dbo.SharePoint (
+            StorageUsedGB FLOAT,
+            ___Report_Refresh_Date NVARCHAR(50),
+            Site_Id NVARCHAR(255),
+            Site_URL NVARCHAR(500),
+            Owner_Display_Name NVARCHAR(255),
+            Is_Deleted NVARCHAR(50),
+            Last_Activity_Date NVARCHAR(50),
+            File_Count INT,
+            Active_File_Count INT,
+            Page_View_Count INT,
+            Visited_Page_Count INT,
+            Storage_Used__Byte_ BIGINT,
+            Storage_Allocated__Byte_ BIGINT,
+            Root_Web_Template NVARCHAR(100),
+            Owner_Principal_Name NVARCHAR(255) NOT NULL,
+            Report_Period NVARCHAR(50),
+            ReportPeriod NVARCHAR(50),
+            ReportDate DATETIME2,
+            InsertedAt DATETIME2,
+            SourceReport NVARCHAR(100)
+        );"
         CreateTable_Users = "
-            IF OBJECT_ID('dbo.Users','U') IS NULL
-            CREATE TABLE dbo.Users (
-                Id NVARCHAR(255),
-                DisplayName NVARCHAR(255),
-                UserPrincipalName NVARCHAR(255) NOT NULL,
-                Mail NVARCHAR(255),
-                Department NVARCHAR(255),
-                JobTitle NVARCHAR(255),
-                AccountEnabled NVARCHAR(50),
-                CreatedDateTime NVARCHAR(50),
-                InsertedAt DATETIME2,
-                SourceReport NVARCHAR(100)
-
-                CONSTRAINT PK_Users PRIMARY KEY (UserPrincipalName)
-            );"   
-            CreateTable_ExecutionLog = "
-            IF OBJECT_ID('dbo.ExecutionLog','U') IS NULL
-            CREATE TABLE dbo.ExecutionLog (
-                ExecutionId UNIQUEIDENTIFIER,
-                ExecutionDate DATETIME2,
-                ReportName NVARCHAR(100),
-                Status NVARCHAR(50),
-                RowsRetrieved INT,
-                RowsInserted INT,
-                DurationSeconds INT,
-                ErrorMessage NVARCHAR(MAX),
-                MachineName NVARCHAR(255),
-                PowerShellVersion NVARCHAR(50)
-            );"   
+        IF OBJECT_ID('dbo.Users','U') IS NULL
+        CREATE TABLE dbo.Users (
+            Id NVARCHAR(255),
+            DisplayName NVARCHAR(255),
+            UserPrincipalName NVARCHAR(255) NOT NULL,
+            Mail NVARCHAR(255),
+            Department NVARCHAR(255),
+            JobTitle NVARCHAR(255),
+            AccountEnabled NVARCHAR(50),
+            CreatedDateTime NVARCHAR(50),
+            InsertedAt DATETIME2,
+            SourceReport NVARCHAR(100)
+        );"   
+        CreateTable_ExecutionLog = "
+        IF OBJECT_ID('dbo.ExecutionLog','U') IS NULL
+        CREATE TABLE dbo.ExecutionLog (
+            ExecutionId UNIQUEIDENTIFIER,
+            ExecutionDate DATETIME2,
+            ReportName NVARCHAR(100),
+            Status NVARCHAR(50),
+            RowsRetrieved INT,
+            RowsInserted INT,
+            DurationSeconds INT,
+            ErrorMessage NVARCHAR(MAX),
+            MachineName NVARCHAR(255),
+            PowerShellVersion NVARCHAR(50)
+        );"   
     }
 
     Execution = @{
@@ -242,7 +220,6 @@ $Config = @{
 }
 $masterConnectionString = "Server=$($Config.Sql.Server);Database=$($Config.Sql.SqlDBMaster);Trusted_Connection=True;TrustServerCertificate=True;"
 $targetConnectionString = "Server=$($Config.Sql.Server);Database=$($Config.Sql.SqlDBTarget);Trusted_Connection=True;TrustServerCertificate=True;"
-
 
 
 # ======================
@@ -772,10 +749,8 @@ try {
         Exchange   = $Config.Sql.CreateTable_Exchange
         OneDrive   = $Config.Sql.CreateTable_OneDrive
         SharePoint = $Config.Sql.CreateTable_SharePoint
-        Teams      = $Config.Sql.CreateTable_Teams
         Users      = $Config.Sql.CreateTable_Users
     }
-
     foreach ($report in $ReportTables.GetEnumerator()) {
         $reportName = $report.Key
         $createQuery = $report.Value
@@ -808,12 +783,11 @@ try {
 
     $TaskStart = Get-Date
 
-    #STEP 1: exchange, onedrive, sharepoint and microsoft teams
+    #STEP 1: exchange, onedrive and sharepoint
     $Reports = @{
         Exchange   = "https://graph.microsoft.com/v1.0/reports/getMailboxUsageDetail(period='$($Config.Execution.Period)')"
         OneDrive   = "https://graph.microsoft.com/v1.0/reports/getOneDriveUsageAccountDetail(period='$($Config.Execution.Period)')"
         SharePoint = "https://graph.microsoft.com/v1.0/reports/getSharePointSiteUsageDetail(period='$($Config.Execution.Period)')"
-        Teams      = "https://graph.microsoft.com/v1.0/reports/getTeamsUserActivityUserDetail(period='$($Config.Execution.Period)')"
     }
 
     foreach ($ReportName in $Reports.Keys) {
@@ -1056,8 +1030,44 @@ try {
             throw
         }
     }
+    
+    #STEP 2: metrics
+    Write-Log "Creating total metrics for Exchange, OneDrive and SharePoint" -ForegroundColor Cyan
 
-    #STEP 2: users
+    $Date =  Get-Date -Format "yyyy-MM-dd"
+    $CreateExchangeTable_Total = "
+        SELECT
+            SUM(ISNULL([Primary_Item_Count],0))  AS Total_Primary_Item_Count,
+            SUM(ISNULL([Archive_Item_Count],0))  AS Total_Archive_Item_Count,
+            SUM(ISNULL([Primary_Total_Size_Bytes],0))  AS Total_Primary_Total_Size_Bytes,
+            SUM(ISNULL([Archive_Total_Size_Bytes],0))  AS Total_Archive_Total_Size_Bytes
+        INTO [DataCare].[dbo].[Exchange_Total_$($Date)]
+        FROM [DataCare].[dbo].[Exchange];
+    "
+    Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $CreateExchangeTable_Total
+    Write-Log "Exchange_Total_$($Date) create successfully." Green
+
+    $CreateOneDriveTable_Total = "
+        SELECT
+            SUM(ISNULL([File_Count],0))  AS Total_File_Count,
+            SUM(ISNULL([StorageUsedGB],0))  AS Total_StorageUsedGB
+        INTO [DataCare].[dbo].[OneDrive_Total_$($Date)]
+        FROM [DataCare].[dbo].[OneDrive];
+    "
+    Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $CreateOneDriveTable_Total
+    Write-Log "OneDrive_Total_$($Date) create successfully." Green
+
+    $CreateSharePointTable_Total = "
+        SELECT
+            SUM(ISNULL([File_Count],0))  AS Total_File_Count,
+            SUM(ISNULL([StorageUsedGB],0))  AS Total_StorageUsedGB
+        INTO [DataCare].[dbo].[SharePoint_Total_$($Date)]
+        FROM [DataCare].[dbo].[SharePoint];
+    "
+    Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $CreateSharePointTable_Total
+    Write-Log "SharePoint_Total_$($Date) create successfully." Green
+
+    #STEP 3: users
     $AllUsers = @()
     $UsersTable = "Users"
     $Url = "https://graph.microsoft.com/v1.0/users"
