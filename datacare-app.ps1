@@ -13,8 +13,6 @@
         https://learn.microsoft.com/en-us/graph/api/reportroot-getonedriveusageaccountdetail?view=graph-rest-1.0&tabs=http
         - SharePoint site usage
         https://learn.microsoft.com/en-us/graph/api/reportroot-getsharepointsiteusagedetail?view=graph-rest-1.0&tabs=http
-        - Microsoft Teams user activity
-        https://learn.microsoft.com/en-us/graph/api/reportroot-getteamsuseractivityuserdetail?view=graph-rest-1.0&tabs=http
         - Azure AD users
         https://learn.microsoft.com/en-us/graph/api/user-get?view=graph-rest-1.0&tabs=http
 
@@ -46,12 +44,10 @@
         SQL:
             $SqlServer
             $SqlDatabase
-
         Azure AD:
             $TenantId
             $ClientId
             $ClientSecret
-
         Execution:
             $Period
             $Department
@@ -495,7 +491,6 @@ IF DB_ID(N'$($Config.Sql.SqlDBTarget)') IS NULL
         Exchange     = $Config.Sql.CreateTable_Exchange
         OneDrive     = $Config.Sql.CreateTable_OneDrive
         SharePoint   = $Config.Sql.CreateTable_SharePoint
-        Teams        = $Config.Sql.CreateTable_Teams
     }
 
     foreach ($table in $tables.GetEnumerator()) {
@@ -658,7 +653,6 @@ function Get-ReportCountFromDb {
             "Exchange"    = "dbo.Exchange"
             "OneDrive"    = "dbo.OneDrive"
             "SharePoint"  = "dbo.SharePoint"
-            "Teams"       = "dbo.Teams"
             "Users"       = "dbo.Users"
         }
 
