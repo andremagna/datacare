@@ -1025,43 +1025,7 @@ try {
         }
     }
     
-    #STEP 2: metrics
-    Write-Log "Creating total metrics for Exchange, OneDrive and SharePoint" -ForegroundColor Cyan
-
-    $Date =  Get-Date -Format "yyyy-MM-dd"
-    $CreateExchangeTable_Total = "
-        SELECT
-            SUM(ISNULL([Primary_Item_Count],0))  AS Total_Primary_Item_Count,
-            SUM(ISNULL([Archive_Item_Count],0))  AS Total_Archive_Item_Count,
-            SUM(ISNULL([Primary_Total_Size_Bytes],0))  AS Total_Primary_Total_Size_Bytes,
-            SUM(ISNULL([Archive_Total_Size_Bytes],0))  AS Total_Archive_Total_Size_Bytes
-        INTO [DataCare].[dbo].[Exchange_Total_$($Date)]
-        FROM [DataCare].[dbo].[Exchange];
-    "
-    Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $CreateExchangeTable_Total
-    Write-Log "Exchange_Total_$($Date) create successfully." Green
-
-    $CreateOneDriveTable_Total = "
-        SELECT
-            SUM(ISNULL([File_Count],0))  AS Total_File_Count,
-            SUM(ISNULL([StorageUsedGB],0))  AS Total_StorageUsedGB
-        INTO [DataCare].[dbo].[OneDrive_Total_$($Date)]
-        FROM [DataCare].[dbo].[OneDrive];
-    "
-    Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $CreateOneDriveTable_Total
-    Write-Log "OneDrive_Total_$($Date) create successfully." Green
-
-    $CreateSharePointTable_Total = "
-        SELECT
-            SUM(ISNULL([File_Count],0))  AS Total_File_Count,
-            SUM(ISNULL([StorageUsedGB],0))  AS Total_StorageUsedGB
-        INTO [DataCare].[dbo].[SharePoint_Total_$($Date)]
-        FROM [DataCare].[dbo].[SharePoint];
-    "
-    Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $CreateSharePointTable_Total
-    Write-Log "SharePoint_Total_$($Date) create successfully." Green
-
-    #STEP 3: users
+    #STEP 2: users
     $AllUsers = @()
     $UsersTable = "Users"
     $Url = "https://graph.microsoft.com/v1.0/users"
@@ -1126,6 +1090,48 @@ try {
             -RowsRetrieved ($TotalRowsRetrieved + $TotalRowsRetrievedUsers) `
             -RowsInserted ($TotalRowsInserted + $TotalRowsInsertedUsers) `
             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
+
+    #STEP 3: metrics
+    Write-Log "Creating total metrics for Exchange, OneDrive, SharePoint and Users" -ForegroundColor Cyan
+
+    $Date =  Get-Date -Format "yyyy-MM-dd"
+    $CreateDashboardTotalTable = 
+    "
+        SELECT *
+        INTO [DataCare].[dbo].[DashboardDataTotal_$($Date)]
+        FROM
+        (
+            SELECT
+                SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
+                SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
+                CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
+                CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB
+            FROM [DataCare].[dbo].[Exchange]
+        ) e
+        CROSS JOIN
+        (
+            SELECT
+                SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
+                SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
+            FROM [DataCare].[dbo].[OneDrive]
+        ) o
+        CROSS JOIN
+        (
+            SELECT
+                SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
+                SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
+            FROM [DataCare].[dbo].[SharePoint]
+        ) s
+        CROSS JOIN
+        (
+            SELECT
+                COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
+            FROM [DataCare].[dbo].[Users]
+            WHERE [UserPrincipalName] IS NOT NULL
+        ) u;
+    "
+    Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $CreateDashboardTotalTable
+    Write-Log "[DataCare].[dbo].[DashboardDataTotal_$($Date)] create successfully." Green
     
     Write-Log "=== END DATACARE EXE ===" -ForegroundColor Green
 }
