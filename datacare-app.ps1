@@ -3,12 +3,13 @@
     Microsoft 365 Usage Data Collector and SQL Server Loader
 
 .DESCRIPTION
-    This script authenticates to Microsoft 365 using application permissions
-    and retrieves usage and activity reports from Microsoft Graph.
+    This script authenticates to Microsoft 365 and Exchange Online using application permissions
+    and retrieves usage and activity details.
 
     Retrieved data includes:
         - Exchange mailbox usage
         https://learn.microsoft.com/en-us/graph/api/reportroot-getmailboxusagedetail?view=graph-rest-1.0&tabs=http
+        https://learn.microsoft.com/en-us/powershell/module/exchangepowershell/get-exomailboxstatistics?view=exchange-ps
         - OneDrive usage
         https://learn.microsoft.com/en-us/graph/api/reportroot-getonedriveusageaccountdetail?view=graph-rest-1.0&tabs=http
         - SharePoint site usage
@@ -41,15 +42,11 @@
 
 .CONFIGURATION
     The following variables must be configured:
-        SQL:
-            $SqlServer
-            $SqlDatabase
         Azure AD:
             $TenantId
             $ClientId
             $ClientSecret
         Execution:
-            $Period
             $Department
 
 .EXECUTION
