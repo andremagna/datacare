@@ -42,12 +42,12 @@
 
 .CONFIGURATION
     The following variables must be configured:
-        Azure AD:
-            $TenantId
-            $ClientId
-            $ClientSecret
-        Execution:
-            $Department
+    - Azure AD:
+        $TenantId
+        $ClientId
+        $ClientSecret
+    - Execution:
+        $Department
 
 .EXECUTION
     1. Open PowerShell with admin privileges
@@ -65,8 +65,7 @@
     © 2026 Business Integration Partners. All rights reserved.
 
 .LICENSE
-    Internal corporate use only.
-    Unauthorized distribution or modification is prohibited.
+    Internal corporate use only. Unauthorized distribution or modification is prohibited.
 
 .VERSION
     1.0.0
@@ -204,6 +203,19 @@ $Config = @{
             MachineName NVARCHAR(255),
             PowerShellVersion NVARCHAR(50)
         );"   
+        CreateTable_PowerBIDataModel = "
+        IF OBJECT_ID('dbo.PowerBIDataModel','U') IS NULL
+        CREATE TABLE dbo.PowerBIDataModel (
+            Exchange_Total_Primary_Item_Count INT,
+            Exchange_Total_Archive_Item_Count INT,
+            Exchange_Total_Primary_Total_Size_GB DECIMAL(18,2),
+            Exchange_Total_Archive_Total_Size_GB DECIMAL(18,2),
+            OneDrive_Total_File_Count INT,
+            OneDrive_Total_StorageUsedGB FLOAT,
+            SharePoint_Total_File_Count INT,
+            SharePoint_Total_StorageUsedGB FLOAT,
+            Users_Total INT
+        );"
     }
 
     Execution = @{
@@ -741,6 +753,7 @@ try {
         OneDrive   = $Config.Sql.CreateTable_OneDrive
         SharePoint = $Config.Sql.CreateTable_SharePoint
         Users      = $Config.Sql.CreateTable_Users
+        DataModel  = $Config.Sql.CreateTable_PowerBIDataModel
     }
     foreach ($report in $ReportTables.GetEnumerator()) {
         $reportName = $report.Key
@@ -782,7 +795,7 @@ try {
     }
 
     foreach ($ReportName in $Reports.Keys) {
-        Write-Log "CASE: $ReportName" -ForegroundColor Cyan
+        Write-Log "STEP 1 - CASE: $ReportName" -ForegroundColor Cyan
         try {
             $Response = Invoke-GraphRequest -Url $Reports[$ReportName] -Headers $ReportHeaders
             if ($Response) {
@@ -1026,6 +1039,7 @@ try {
     $AllUsers = @()
     $UsersTable = "Users"
     $Url = "https://graph.microsoft.com/v1.0/users"
+    Write-Log "STEP 2 - CASE: $UsersTable" -ForegroundColor Cyan
 
     do {
         $Response = Invoke-GraphRequest -Url $Url -Headers $UserHeaders
@@ -1088,47 +1102,45 @@ try {
             -RowsInserted ($TotalRowsInserted + $TotalRowsInsertedUsers) `
             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
 
-    #STEP 3: metrics
-    Write-Log "Creating total metrics for Exchange, OneDrive, SharePoint and Users" -ForegroundColor Cyan
+    #STEP 3: powerbi dashboard
+    Write-Log "STEP 3 - Creating final metrics for PowerBI" -ForegroundColor Cyan
 
     $Date =  Get-Date -Format "yyyy-MM-dd"
-    $CreateDashboardTotalTable = 
+    $createPowerBIDataModel = 
     "
-        SELECT *
-        INTO [DataCare].[dbo].[DashboardDataTotal_$($Date)]
-        FROM
-        (
+        WITH Data AS (
             SELECT
                 SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
                 SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
                 CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
-                CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB
-            FROM [DataCare].[dbo].[Exchange]
-        ) e
-        CROSS JOIN
-        (
-            SELECT
-                SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
-                SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
-            FROM [DataCare].[dbo].[OneDrive]
-        ) o
-        CROSS JOIN
-        (
-            SELECT
-                SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
-                SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
-            FROM [DataCare].[dbo].[SharePoint]
-        ) s
-        CROSS JOIN
-        (
-            SELECT
-                COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
-            FROM [DataCare].[dbo].[Users]
-            WHERE [UserPrincipalName] IS NOT NULL
-        ) u;
+                CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
+                SUM(ISNULL(o.[File_Count],0)) AS OneDrive_Total_File_Count,
+                SUM(ISNULL(o.[StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB,
+                SUM(ISNULL(s.[File_Count],0)) AS SharePoint_Total_File_Count,
+                SUM(ISNULL(s.[StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB,
+                COUNT(DISTINCT u.[UserPrincipalName]) AS Users_Total
+
+            FROM [DataCare].[dbo].[Exchange] e
+            CROSS JOIN [DataCare].[dbo].[OneDrive] o
+            CROSS JOIN [DataCare].[dbo].[SharePoint] s
+            CROSS JOIN [DataCare].[dbo].[Users] u
+            WHERE u.[UserPrincipalName] IS NOT NULL
+        )
     "
-    Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $CreateDashboardTotalTable
-    Write-Log "[DataCare].[dbo].[DashboardDataTotal_$($Date)] create successfully." Green
+    Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $createPowerBIDataModel
+    Write-Log "PowerBI datacare data model created successfully." Green
+
+    $createPowerBITables = "
+        -- 1st view on powerbi and backup datacare
+        INSERT INTO [DataCare].[dbo].[PowerBIDataModelBackup_$($Date)]
+        SELECT * FROM Data;
+
+        -- 2nd view on powerbi
+        INSERT INTO [DataCare].[dbo].[PowerBIDataModel]
+        SELECT * FROM Data;
+    "
+    Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $createPowerBITables
+    Write-Log "[DataCare].[dbo].[DashboardDataBackup_$($Date)] and DashboardDataModel created successfully." Green
     
     Write-Log "=== END DATACARE EXE ===" -ForegroundColor Green
 }
