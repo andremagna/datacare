@@ -500,6 +500,7 @@ IF DB_ID(N'$($Config.Sql.SqlDBTarget)') IS NULL
         Exchange     = $Config.Sql.CreateTable_Exchange
         OneDrive     = $Config.Sql.CreateTable_OneDrive
         SharePoint   = $Config.Sql.CreateTable_SharePoint
+        PowerBIDataModel = $Config.Sql.CreateTable_PowerBIDataModel
     }
 
     foreach ($table in $tables.GetEnumerator()) {
@@ -663,6 +664,7 @@ function Get-ReportCountFromDb {
             "OneDrive"    = "dbo.OneDrive"
             "SharePoint"  = "dbo.SharePoint"
             "Users"       = "dbo.Users"
+            "PowerBIDataModel"   = "dbo.PowerBIDataModel"
         }
 
         if (-not $tableMap.ContainsKey($ReportName)) {
@@ -753,7 +755,7 @@ try {
         OneDrive   = $Config.Sql.CreateTable_OneDrive
         SharePoint = $Config.Sql.CreateTable_SharePoint
         Users      = $Config.Sql.CreateTable_Users
-        DataModel  = $Config.Sql.CreateTable_PowerBIDataModel
+        PowerBIDataModel  = $Config.Sql.CreateTable_PowerBIDataModel
     }
     foreach ($report in $ReportTables.GetEnumerator()) {
         $reportName = $report.Key
@@ -1102,45 +1104,164 @@ try {
             -RowsInserted ($TotalRowsInserted + $TotalRowsInsertedUsers) `
             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
 
-    #STEP 3: powerbi dashboard
+    #STEP 3: powerbi dashboard [1st view: PowerBIDataModelBackup_$($Date) where $($Date) is the first run // 2nd view: PowerBIDataModel]
     Write-Log "STEP 3 - Creating final metrics for PowerBI" -ForegroundColor Cyan
 
-    $Date =  Get-Date -Format "yyyy-MM-dd"
-    $createPowerBIDataModel = 
-    "
-        WITH Data AS (
+    $Date = Get-Date -Format "yyyy-MM-dd"
+    $query = "
+    IF OBJECT_ID('DataCare.dbo.PowerBIDataModelBackup_$($Date)', 'U') IS NULL
+    BEGIN
+        SELECT *
+        INTO [DataCare].[dbo].[PowerBIDataModelBackup_$($Date)]
+        FROM (
             SELECT
-                SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
+                e.Exchange_Total_Primary_Item_Count,
+                e.Exchange_Total_Archive_Item_Count,
+                e.Exchange_Total_Primary_Total_Size_GB,
+                e.Exchange_Total_Archive_Total_Size_GB,
+                o.OneDrive_Total_File_Count,
+                o.OneDrive_Total_StorageUsedGB,
+                s.SharePoint_Total_File_Count,
+                s.SharePoint_Total_StorageUsedGB,
+                u.Users_Total
+            FROM
+            (
+                SELECT
+                    SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
+                    SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
+                    CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
+                    CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB
+                FROM [DataCare].[dbo].[Exchange]
+            ) e
+            CROSS JOIN
+            (
+                SELECT
+                    SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
+                    SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
+                FROM [DataCare].[dbo].[OneDrive]
+            ) o
+            CROSS JOIN
+            (
+                SELECT
+                    SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
+                    SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
+                FROM [DataCare].[dbo].[SharePoint]
+            ) s
+            CROSS JOIN
+            (
+                SELECT
+                    COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
+                FROM [DataCare].[dbo].[Users]
+                WHERE [UserPrincipalName] IS NOT NULL
+            ) u
+        ) Data
+    END
+    ELSE
+    BEGIN
+        INSERT INTO [DataCare].[dbo].[PowerBIDataModelBackup_$($Date)]
+        SELECT * FROM (
+            SELECT
+                e.Exchange_Total_Primary_Item_Count,
+                e.Exchange_Total_Archive_Item_Count,
+                e.Exchange_Total_Primary_Total_Size_GB,
+                e.Exchange_Total_Archive_Total_Size_GB,
+                o.OneDrive_Total_File_Count,
+                o.OneDrive_Total_StorageUsedGB,
+                s.SharePoint_Total_File_Count,
+                s.SharePoint_Total_StorageUsedGB,
+                u.Users_Total
+            FROM
+            (
+                SELECT
+                    SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
+                    SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
+                    CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
+                    CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB
+                FROM [DataCare].[dbo].[Exchange]
+            ) e
+            CROSS JOIN
+            (
+                SELECT
+                    SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
+                    SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
+                FROM [DataCare].[dbo].[OneDrive]
+            ) o
+            CROSS JOIN
+            (
+                SELECT
+                    SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
+                    SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
+                FROM [DataCare].[dbo].[SharePoint]
+            ) s
+            CROSS JOIN
+            (
+                SELECT
+                    COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
+                FROM [DataCare].[dbo].[Users]
+                WHERE [UserPrincipalName] IS NOT NULL
+            ) u
+        ) Data
+    END
+
+    -- 2nd table
+    INSERT INTO [DataCare].[dbo].[PowerBIDataModel]
+    SELECT * FROM (
+        SELECT
+            e.Exchange_Total_Primary_Item_Count,
+            e.Exchange_Total_Archive_Item_Count,
+            e.Exchange_Total_Primary_Total_Size_GB,
+            e.Exchange_Total_Archive_Total_Size_GB,
+            o.OneDrive_Total_File_Count,
+            o.OneDrive_Total_StorageUsedGB,
+            s.SharePoint_Total_File_Count,
+            s.SharePoint_Total_StorageUsedGB,
+            u.Users_Total
+        FROM
+        (
+            SELECT SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
                 SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
                 CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
-                CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
-                SUM(ISNULL(o.[File_Count],0)) AS OneDrive_Total_File_Count,
-                SUM(ISNULL(o.[StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB,
-                SUM(ISNULL(s.[File_Count],0)) AS SharePoint_Total_File_Count,
-                SUM(ISNULL(s.[StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB,
-                COUNT(DISTINCT u.[UserPrincipalName]) AS Users_Total
-
-            FROM [DataCare].[dbo].[Exchange] e
-            CROSS JOIN [DataCare].[dbo].[OneDrive] o
-            CROSS JOIN [DataCare].[dbo].[SharePoint] s
-            CROSS JOIN [DataCare].[dbo].[Users] u
-            WHERE u.[UserPrincipalName] IS NOT NULL
-        )
+                CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB
+            FROM [DataCare].[dbo].[Exchange]
+        ) e
+        CROSS JOIN
+        (
+            SELECT SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
+                SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
+            FROM [DataCare].[dbo].[OneDrive]
+        ) o
+        CROSS JOIN
+        (
+            SELECT SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
+                SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
+            FROM [DataCare].[dbo].[SharePoint]
+        ) s
+        CROSS JOIN
+        (
+            SELECT COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
+            FROM [DataCare].[dbo].[Users]
+            WHERE [UserPrincipalName] IS NOT NULL
+        ) u
+    ) Data;
     "
-    Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $createPowerBIDataModel
-    Write-Log "PowerBI datacare data model created successfully." Green
+    Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $query
 
-    $createPowerBITables = "
-        -- 1st view on powerbi and backup datacare
-        INSERT INTO [DataCare].[dbo].[PowerBIDataModelBackup_$($Date)]
-        SELECT * FROM Data;
-
-        -- 2nd view on powerbi
-        INSERT INTO [DataCare].[dbo].[PowerBIDataModel]
-        SELECT * FROM Data;
+    $checkTablesQuery= "
+    SELECT 
+        CASE 
+            WHEN OBJECT_ID('DataCare.dbo.PowerBIDataModelBackup_$($Date)', 'U') IS NOT NULL
+            AND OBJECT_ID('DataCare.dbo.PowerBIDataModel', 'U') IS NOT NULL
+            THEN 1
+            ELSE 0
+        END AS TablesExist
     "
-    Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $createPowerBITables
-    Write-Log "[DataCare].[dbo].[DashboardDataBackup_$($Date)] and DashboardDataModel created successfully." Green
+    $result = Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $checkTablesQuery
+    if ($result.TablesExist -eq 1) {
+        Write-Log "[DataCare].[dbo].[PowerBIDataModelBackup_$($Date)] and PowerBIDataModel created successfully." Green
+    }
+    else {
+        Write-Log "ERROR: One or both tables were not created correctly." Red
+    }
     
     Write-Log "=== END DATACARE EXE ===" -ForegroundColor Green
 }
