@@ -210,6 +210,16 @@ $Config = @{
             Exchange_Total_Archive_Item_Count INT,
             Exchange_Total_Primary_Total_Size_GB DECIMAL(18,2),
             Exchange_Total_Archive_Total_Size_GB DECIMAL(18,2),
+            Exchange_Total_Primary_Total_Size_Bytes BIGINT,
+            Exchange_Total_Primary_SystemMessage_Count INT,
+            Exchange_Total_Primary_SystemMessage_Size_Bytes BIGINT,
+            Exchange_Total_Primary_Recoverable_Count INT,
+            Exchange_Total_Primary_Recoverable_Size_Bytes BIGINT,
+            Exchange_Total_Archive_Total_Size_Bytes BIGINT,
+            Exchange_Total_Archive_SystemMessage_Count INT,
+            Exchange_Total_Archive_SystemMessage_Size_Bytes BIGINT,
+            Exchange_Total_Archive_Recoverable_Count INT,
+            Exchange_Total_Archive_Recoverable_Size_Bytes BIGINT,
             OneDrive_Total_File_Count INT,
             OneDrive_Total_StorageUsedGB FLOAT,
             SharePoint_Total_File_Count INT,
@@ -1119,6 +1129,16 @@ try {
                 e.Exchange_Total_Archive_Item_Count,
                 e.Exchange_Total_Primary_Total_Size_GB,
                 e.Exchange_Total_Archive_Total_Size_GB,
+                e.Exchange_Total_Primary_Total_Size_Bytes,
+                e.Exchange_Total_Primary_SystemMessage_Count,
+                e.Exchange_Total_Primary_SystemMessage_Size_Bytes,
+                e.Exchange_Total_Primary_Recoverable_Count,
+                e.Exchange_Total_Primary_Recoverable_Size_Bytes,
+                e.Exchange_Total_Archive_Total_Size_Bytes,
+                e.Exchange_Total_Archive_SystemMessage_Count,
+                e.Exchange_Total_Archive_SystemMessage_Size_Bytes,
+                e.Exchange_Total_Archive_Recoverable_Count,
+                e.Exchange_Total_Archive_Recoverable_Size_Bytes,
                 o.OneDrive_Total_File_Count,
                 o.OneDrive_Total_StorageUsedGB,
                 s.SharePoint_Total_File_Count,
@@ -1130,7 +1150,17 @@ try {
                     SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
                     SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
                     CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
-                    CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB
+                    CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
+                    SUM(ISNULL([Primary_Total_Size_Bytes],0)) AS Exchange_Total_Primary_Total_Size_Bytes,
+                    SUM(ISNULL([Primary_SystemMessage_Count],0)) AS Exchange_Total_Primary_SystemMessage_Count,
+                    SUM(ISNULL([Primary_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Primary_SystemMessage_Size_Bytes,
+                    SUM(ISNULL([Primary_Recoverable_Count],0)) AS Exchange_Total_Primary_Recoverable_Count,
+                    SUM(ISNULL([Primary_Recoverable_Size_Bytes],0)) AS Exchange_Total_Primary_Recoverable_Size_Bytes,
+                    SUM(ISNULL([Archive_Total_Size_Bytes],0)) AS Exchange_Total_Archive_Total_Size_Bytes,
+                    SUM(ISNULL([Archive_SystemMessage_Count],0)) AS Exchange_Total_Archive_SystemMessage_Count,
+                    SUM(ISNULL([Archive_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Archive_SystemMessage_Size_Bytes,
+                    SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
+                    SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
                 FROM [DataCare].[dbo].[Exchange]
             ) e
             CROSS JOIN
@@ -1165,6 +1195,16 @@ try {
                 e.Exchange_Total_Archive_Item_Count,
                 e.Exchange_Total_Primary_Total_Size_GB,
                 e.Exchange_Total_Archive_Total_Size_GB,
+                e.Exchange_Total_Primary_Total_Size_Bytes,
+                e.Exchange_Total_Primary_SystemMessage_Count,
+                e.Exchange_Total_Primary_SystemMessage_Size_Bytes,
+                e.Exchange_Total_Primary_Recoverable_Count,
+                e.Exchange_Total_Primary_Recoverable_Size_Bytes,
+                e.Exchange_Total_Archive_Total_Size_Bytes,
+                e.Exchange_Total_Archive_SystemMessage_Count,
+                e.Exchange_Total_Archive_SystemMessage_Size_Bytes,
+                e.Exchange_Total_Archive_Recoverable_Count,
+                e.Exchange_Total_Archive_Recoverable_Size_Bytes,
                 o.OneDrive_Total_File_Count,
                 o.OneDrive_Total_StorageUsedGB,
                 s.SharePoint_Total_File_Count,
@@ -1176,7 +1216,17 @@ try {
                     SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
                     SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
                     CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
-                    CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB
+                    CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
+                    SUM(ISNULL([Primary_Total_Size_Bytes],0)) AS Exchange_Total_Primary_Total_Size_Bytes,
+                    SUM(ISNULL([Primary_SystemMessage_Count],0)) AS Exchange_Total_Primary_SystemMessage_Count,
+                    SUM(ISNULL([Primary_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Primary_SystemMessage_Size_Bytes,
+                    SUM(ISNULL([Primary_Recoverable_Count],0)) AS Exchange_Total_Primary_Recoverable_Count,
+                    SUM(ISNULL([Primary_Recoverable_Size_Bytes],0)) AS Exchange_Total_Primary_Recoverable_Size_Bytes,
+                    SUM(ISNULL([Archive_Total_Size_Bytes],0)) AS Exchange_Total_Archive_Total_Size_Bytes,
+                    SUM(ISNULL([Archive_SystemMessage_Count],0)) AS Exchange_Total_Archive_SystemMessage_Count,
+                    SUM(ISNULL([Archive_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Archive_SystemMessage_Size_Bytes,
+                    SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
+                    SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
                 FROM [DataCare].[dbo].[Exchange]
             ) e
             CROSS JOIN
@@ -1211,6 +1261,16 @@ try {
             e.Exchange_Total_Archive_Item_Count,
             e.Exchange_Total_Primary_Total_Size_GB,
             e.Exchange_Total_Archive_Total_Size_GB,
+            e.Exchange_Total_Primary_Total_Size_Bytes,
+            e.Exchange_Total_Primary_SystemMessage_Count,
+            e.Exchange_Total_Primary_SystemMessage_Size_Bytes,
+            e.Exchange_Total_Primary_Recoverable_Count,
+            e.Exchange_Total_Primary_Recoverable_Size_Bytes,
+            e.Exchange_Total_Archive_Total_Size_Bytes,
+            e.Exchange_Total_Archive_SystemMessage_Count,
+            e.Exchange_Total_Archive_SystemMessage_Size_Bytes,
+            e.Exchange_Total_Archive_Recoverable_Count,
+            e.Exchange_Total_Archive_Recoverable_Size_Bytes,
             o.OneDrive_Total_File_Count,
             o.OneDrive_Total_StorageUsedGB,
             s.SharePoint_Total_File_Count,
@@ -1221,7 +1281,17 @@ try {
             SELECT SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
                 SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
                 CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
-                CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB
+                CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
+                SUM(ISNULL([Primary_Total_Size_Bytes],0)) AS Exchange_Total_Primary_Total_Size_Bytes,
+                SUM(ISNULL([Primary_SystemMessage_Count],0)) AS Exchange_Total_Primary_SystemMessage_Count,
+                SUM(ISNULL([Primary_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Primary_SystemMessage_Size_Bytes,
+                SUM(ISNULL([Primary_Recoverable_Count],0)) AS Exchange_Total_Primary_Recoverable_Count,
+                SUM(ISNULL([Primary_Recoverable_Size_Bytes],0)) AS Exchange_Total_Primary_Recoverable_Size_Bytes,
+                SUM(ISNULL([Archive_Total_Size_Bytes],0)) AS Exchange_Total_Archive_Total_Size_Bytes,
+                SUM(ISNULL([Archive_SystemMessage_Count],0)) AS Exchange_Total_Archive_SystemMessage_Count,
+                SUM(ISNULL([Archive_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Archive_SystemMessage_Size_Bytes,
+                SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
+                SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
             FROM [DataCare].[dbo].[Exchange]
         ) e
         CROSS JOIN
@@ -1255,6 +1325,7 @@ try {
             ELSE 0
         END AS TablesExist
     "
+    
     $result = Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $checkTablesQuery
     if ($result.TablesExist -eq 1) {
         Write-Log "[DataCare].[dbo].[PowerBIDataModelBackup_$($Date)] and PowerBIDataModel created successfully." Green
