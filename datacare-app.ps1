@@ -807,7 +807,10 @@ try {
     }
 
     foreach ($ReportName in $Reports.Keys) {
-        Write-Log "STEP 1 - CASE: $ReportName" -ForegroundColor Magenta
+        Write-Log "
+        ***************************************
+        STEP 1 - CASE: $ReportName
+        ***************************************" -ForegroundColor Magenta
         try {
             $Response = Invoke-GraphRequest -Url $Reports[$ReportName] -Headers $ReportHeaders
             if ($Response) {
@@ -1048,14 +1051,16 @@ try {
     }
     
     #STEP 2: users
+    Write-Log " 
+    ***************************************
+    STEP 2 - CASE: Users
+    *************************************** " -ForegroundColor Magenta
+
     $AllUsers = @()
     $UsersTable = "Users"
     $Url = "https://graph.microsoft.com/v1.0/users?`$select=id,displayName,userPrincipalName,mail,department,jobTitle,accountEnabled,createdDateTime,country"
-    Write-Log "STEP 2 - CASE: $UsersTable" -ForegroundColor Magenta
-
     do {
         $Response = Invoke-GraphRequest -Url $Url -Headers $UserHeaders
-        #$Response = Invoke-RestMethod -Uri $Url -Headers $UserHeaders -Method Get
         if ($Response -and $Response.value) {
             $AllUsers += $Response.value
             $Url = $Response.'@odata.nextLink'
@@ -1117,7 +1122,10 @@ try {
             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
 
     #STEP 3: powerbi dashboard [1st view: PowerBIDataModelBackup_$($Date) where $($Date) is the first run // 2nd view: PowerBIDataModel]
-    Write-Log "STEP 3 - Creating final metrics for PowerBI" -ForegroundColor Magenta
+    Write-Log "
+    ***************************************
+    STEP 3 - Creating final metrics for PowerBI
+    ***************************************" -ForegroundColor Magenta
 
     $Date = Get-Date -Format "yyyy-MM-dd"
     <#
