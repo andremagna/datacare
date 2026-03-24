@@ -77,7 +77,6 @@
 $Config = @{
     TenantId     = "76ff1baa-3307-46aa-a752-cc3736d8a2b2" #your_tenantId
     ClientId     = "dd80738f-6094-43ff-bf26-03fe4e3bc7da" #your_clientId
-
     Sql = @{
         Server      = "localhost\SQLEXPRESS"
         SqlDBMaster = "master"
@@ -187,7 +186,8 @@ $Config = @{
             AccountEnabled NVARCHAR(50),
             CreatedDateTime NVARCHAR(50),
             InsertedAt DATETIME2,
-            SourceReport NVARCHAR(100)
+            SourceReport NVARCHAR(100),
+            CountryOrRegion NVARCHAR(50)
         );"   
         CreateTable_ExecutionLog = "
         IF OBJECT_ID('dbo.ExecutionLog','U') IS NULL
@@ -224,10 +224,10 @@ $Config = @{
             OneDrive_Total_StorageUsedGB FLOAT,
             SharePoint_Total_File_Count INT,
             SharePoint_Total_StorageUsedGB FLOAT,
-            Users_Total INT
+            Users_Total INT,
+            CountryCountJSON NVARCHAR(MAX)
         );"
     }
-
     Execution = @{
         Period     = "D180"
         Department = "Information Technology"
@@ -807,7 +807,7 @@ try {
     }
 
     foreach ($ReportName in $Reports.Keys) {
-        Write-Log "STEP 1 - CASE: $ReportName" -ForegroundColor Cyan
+        Write-Log "STEP 1 - CASE: $ReportName" -ForegroundColor Magenta
         try {
             $Response = Invoke-GraphRequest -Url $Reports[$ReportName] -Headers $ReportHeaders
             if ($Response) {
@@ -1050,11 +1050,12 @@ try {
     #STEP 2: users
     $AllUsers = @()
     $UsersTable = "Users"
-    $Url = "https://graph.microsoft.com/v1.0/users"
-    Write-Log "STEP 2 - CASE: $UsersTable" -ForegroundColor Cyan
+    $Url = "https://graph.microsoft.com/v1.0/users?`$select=id,displayName,userPrincipalName,mail,department,jobTitle,accountEnabled,createdDateTime,country"
+    Write-Log "STEP 2 - CASE: $UsersTable" -ForegroundColor Magenta
 
     do {
         $Response = Invoke-GraphRequest -Url $Url -Headers $UserHeaders
+        #$Response = Invoke-RestMethod -Uri $Url -Headers $UserHeaders -Method Get
         if ($Response -and $Response.value) {
             $AllUsers += $Response.value
             $Url = $Response.'@odata.nextLink'
@@ -1065,10 +1066,10 @@ try {
     } while ($Url)
 
     try {
-        
         $RowsInserted = 0
         foreach ($User in $AllUsers) {
             Write-Log "Retrieving user $($User.userPrincipalName) details" -ForegroundColor Cyan
+            
             $userObject = [PSCustomObject]@{
                 id                = $User.id
                 displayName       = $User.displayName
@@ -1078,6 +1079,7 @@ try {
                 jobTitle          = $User.jobTitle
                 accountEnabled    = $User.accountEnabled
                 createdDateTime   = $User.createdDateTime
+                countryOrRegion   = $User.country
             }
             Write-Log "Writing $($User.userPrincipalName) details into SQLServer ..." -ForegroundColor Cyan
             Write-ToSqlTable -TableName $UsersTable -Data $userObject
@@ -1115,9 +1117,10 @@ try {
             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
 
     #STEP 3: powerbi dashboard [1st view: PowerBIDataModelBackup_$($Date) where $($Date) is the first run // 2nd view: PowerBIDataModel]
-    Write-Log "STEP 3 - Creating final metrics for PowerBI" -ForegroundColor Cyan
+    Write-Log "STEP 3 - Creating final metrics for PowerBI" -ForegroundColor Magenta
 
     $Date = Get-Date -Format "yyyy-MM-dd"
+    <#
     $query = "
     IF OBJECT_ID('DataCare.dbo.PowerBIDataModelBackup_$($Date)', 'U') IS NULL
     BEGIN
@@ -1276,6 +1279,223 @@ try {
             s.SharePoint_Total_File_Count,
             s.SharePoint_Total_StorageUsedGB,
             u.Users_Total
+        FROM
+        (
+            SELECT SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
+                SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
+                CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
+                CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
+                SUM(ISNULL([Primary_Total_Size_Bytes],0)) AS Exchange_Total_Primary_Total_Size_Bytes,
+                SUM(ISNULL([Primary_SystemMessage_Count],0)) AS Exchange_Total_Primary_SystemMessage_Count,
+                SUM(ISNULL([Primary_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Primary_SystemMessage_Size_Bytes,
+                SUM(ISNULL([Primary_Recoverable_Count],0)) AS Exchange_Total_Primary_Recoverable_Count,
+                SUM(ISNULL([Primary_Recoverable_Size_Bytes],0)) AS Exchange_Total_Primary_Recoverable_Size_Bytes,
+                SUM(ISNULL([Archive_Total_Size_Bytes],0)) AS Exchange_Total_Archive_Total_Size_Bytes,
+                SUM(ISNULL([Archive_SystemMessage_Count],0)) AS Exchange_Total_Archive_SystemMessage_Count,
+                SUM(ISNULL([Archive_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Archive_SystemMessage_Size_Bytes,
+                SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
+                SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
+            FROM [DataCare].[dbo].[Exchange]
+        ) e
+        CROSS JOIN
+        (
+            SELECT SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
+                SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
+            FROM [DataCare].[dbo].[OneDrive]
+        ) o
+        CROSS JOIN
+        (
+            SELECT SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
+                SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
+            FROM [DataCare].[dbo].[SharePoint]
+        ) s
+        CROSS JOIN
+        (
+            SELECT COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
+            FROM [DataCare].[dbo].[Users]
+            WHERE [UserPrincipalName] IS NOT NULL
+        ) u
+    ) Data;
+    "
+    #>
+    $query = "
+    IF OBJECT_ID('DataCare.dbo.PowerBIDataModelBackup_$($Date)', 'U') IS NULL
+    BEGIN
+        SELECT *
+        INTO [DataCare].[dbo].[PowerBIDataModelBackup_$($Date)]
+        FROM (
+            SELECT
+                e.Exchange_Total_Primary_Item_Count,
+                e.Exchange_Total_Archive_Item_Count,
+                e.Exchange_Total_Primary_Total_Size_GB,
+                e.Exchange_Total_Archive_Total_Size_GB,
+                e.Exchange_Total_Primary_Total_Size_Bytes,
+                e.Exchange_Total_Primary_SystemMessage_Count,
+                e.Exchange_Total_Primary_SystemMessage_Size_Bytes,
+                e.Exchange_Total_Primary_Recoverable_Count,
+                e.Exchange_Total_Primary_Recoverable_Size_Bytes,
+                e.Exchange_Total_Archive_Total_Size_Bytes,
+                e.Exchange_Total_Archive_SystemMessage_Count,
+                e.Exchange_Total_Archive_SystemMessage_Size_Bytes,
+                e.Exchange_Total_Archive_Recoverable_Count,
+                e.Exchange_Total_Archive_Recoverable_Size_Bytes,
+                o.OneDrive_Total_File_Count,
+                o.OneDrive_Total_StorageUsedGB,
+                s.SharePoint_Total_File_Count,
+                s.SharePoint_Total_StorageUsedGB,
+                u.Users_Total,
+                -- aggiunta JSON per le nazioni
+                (SELECT STRING_AGG(CONCAT('""', CountryOrRegion, '""', ':', cnt), ',') 
+                FROM (
+                    SELECT CountryOrRegion, COUNT(*) AS cnt
+                    FROM [DataCare].[dbo].[Users]
+                    WHERE CountryOrRegion IS NOT NULL
+                    GROUP BY CountryOrRegion
+                ) AS countryData
+                ) AS CountryCountJSON
+            FROM
+            (
+                SELECT
+                    SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
+                    SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
+                    CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
+                    CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
+                    SUM(ISNULL([Primary_Total_Size_Bytes],0)) AS Exchange_Total_Primary_Total_Size_Bytes,
+                    SUM(ISNULL([Primary_SystemMessage_Count],0)) AS Exchange_Total_Primary_SystemMessage_Count,
+                    SUM(ISNULL([Primary_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Primary_SystemMessage_Size_Bytes,
+                    SUM(ISNULL([Primary_Recoverable_Count],0)) AS Exchange_Total_Primary_Recoverable_Count,
+                    SUM(ISNULL([Primary_Recoverable_Size_Bytes],0)) AS Exchange_Total_Primary_Recoverable_Size_Bytes,
+                    SUM(ISNULL([Archive_Total_Size_Bytes],0)) AS Exchange_Total_Archive_Total_Size_Bytes,
+                    SUM(ISNULL([Archive_SystemMessage_Count],0)) AS Exchange_Total_Archive_SystemMessage_Count,
+                    SUM(ISNULL([Archive_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Archive_SystemMessage_Size_Bytes,
+                    SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
+                    SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
+                FROM [DataCare].[dbo].[Exchange]
+            ) e
+            CROSS JOIN
+            (
+                SELECT SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
+                    SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
+                FROM [DataCare].[dbo].[OneDrive]
+            ) o
+            CROSS JOIN
+            (
+                SELECT SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
+                    SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
+                FROM [DataCare].[dbo].[SharePoint]
+            ) s
+            CROSS JOIN
+            (
+                SELECT COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
+                FROM [DataCare].[dbo].[Users]
+                WHERE [UserPrincipalName] IS NOT NULL
+            ) u
+        ) Data
+    END
+    ELSE
+    BEGIN
+        INSERT INTO [DataCare].[dbo].[PowerBIDataModelBackup_$($Date)]
+        SELECT * FROM (
+            -- stesso select di sopra, includendo CountryCountJSON
+            SELECT
+                e.Exchange_Total_Primary_Item_Count,
+                e.Exchange_Total_Archive_Item_Count,
+                e.Exchange_Total_Primary_Total_Size_GB,
+                e.Exchange_Total_Archive_Total_Size_GB,
+                e.Exchange_Total_Primary_Total_Size_Bytes,
+                e.Exchange_Total_Primary_SystemMessage_Count,
+                e.Exchange_Total_Primary_SystemMessage_Size_Bytes,
+                e.Exchange_Total_Primary_Recoverable_Count,
+                e.Exchange_Total_Primary_Recoverable_Size_Bytes,
+                e.Exchange_Total_Archive_Total_Size_Bytes,
+                e.Exchange_Total_Archive_SystemMessage_Count,
+                e.Exchange_Total_Archive_SystemMessage_Size_Bytes,
+                e.Exchange_Total_Archive_Recoverable_Count,
+                e.Exchange_Total_Archive_Recoverable_Size_Bytes,
+                o.OneDrive_Total_File_Count,
+                o.OneDrive_Total_StorageUsedGB,
+                s.SharePoint_Total_File_Count,
+                s.SharePoint_Total_StorageUsedGB,
+                u.Users_Total,
+                (SELECT STRING_AGG(CONCAT('""', CountryOrRegion, '""', ':', cnt), ',') 
+                FROM (
+                    SELECT CountryOrRegion, COUNT(*) AS cnt
+                    FROM [DataCare].[dbo].[Users]
+                    WHERE CountryOrRegion IS NOT NULL
+                    GROUP BY CountryOrRegion
+                ) AS countryData
+                ) AS CountryCountJSON
+            FROM
+            (
+                SELECT SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
+                    SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
+                    CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
+                    CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
+                    SUM(ISNULL([Primary_Total_Size_Bytes],0)) AS Exchange_Total_Primary_Total_Size_Bytes,
+                    SUM(ISNULL([Primary_SystemMessage_Count],0)) AS Exchange_Total_Primary_SystemMessage_Count,
+                    SUM(ISNULL([Primary_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Primary_SystemMessage_Size_Bytes,
+                    SUM(ISNULL([Primary_Recoverable_Count],0)) AS Exchange_Total_Primary_Recoverable_Count,
+                    SUM(ISNULL([Primary_Recoverable_Size_Bytes],0)) AS Exchange_Total_Primary_Recoverable_Size_Bytes,
+                    SUM(ISNULL([Archive_Total_Size_Bytes],0)) AS Exchange_Total_Archive_Total_Size_Bytes,
+                    SUM(ISNULL([Archive_SystemMessage_Count],0)) AS Exchange_Total_Archive_SystemMessage_Count,
+                    SUM(ISNULL([Archive_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Archive_SystemMessage_Size_Bytes,
+                    SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
+                    SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
+                FROM [DataCare].[dbo].[Exchange]
+            ) e
+            CROSS JOIN
+            (
+                SELECT SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
+                    SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
+                FROM [DataCare].[dbo].[OneDrive]
+            ) o
+            CROSS JOIN
+            (
+                SELECT SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
+                    SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
+                FROM [DataCare].[dbo].[SharePoint]
+            ) s
+            CROSS JOIN
+            (
+                SELECT COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
+                FROM [DataCare].[dbo].[Users]
+                WHERE [UserPrincipalName] IS NOT NULL
+            ) u
+        ) Data
+    END
+
+    -- Inserimento nella tabella finale
+    INSERT INTO [DataCare].[dbo].[PowerBIDataModel]
+    SELECT * FROM (
+        -- stesso select con CountryCountJSON
+        SELECT
+            e.Exchange_Total_Primary_Item_Count,
+            e.Exchange_Total_Archive_Item_Count,
+            e.Exchange_Total_Primary_Total_Size_GB,
+            e.Exchange_Total_Archive_Total_Size_GB,
+            e.Exchange_Total_Primary_Total_Size_Bytes,
+            e.Exchange_Total_Primary_SystemMessage_Count,
+            e.Exchange_Total_Primary_SystemMessage_Size_Bytes,
+            e.Exchange_Total_Primary_Recoverable_Count,
+            e.Exchange_Total_Primary_Recoverable_Size_Bytes,
+            e.Exchange_Total_Archive_Total_Size_Bytes,
+            e.Exchange_Total_Archive_SystemMessage_Count,
+            e.Exchange_Total_Archive_SystemMessage_Size_Bytes,
+            e.Exchange_Total_Archive_Recoverable_Count,
+            e.Exchange_Total_Archive_Recoverable_Size_Bytes,
+            o.OneDrive_Total_File_Count,
+            o.OneDrive_Total_StorageUsedGB,
+            s.SharePoint_Total_File_Count,
+            s.SharePoint_Total_StorageUsedGB,
+            u.Users_Total,
+            (SELECT STRING_AGG(CONCAT('""', CountryOrRegion, '""', ':', cnt), ',') 
+            FROM (
+                SELECT CountryOrRegion, COUNT(*) AS cnt
+                FROM [DataCare].[dbo].[Users]
+                WHERE CountryOrRegion IS NOT NULL
+                GROUP BY CountryOrRegion
+            ) AS countryData
+            ) AS CountryCountJSON
         FROM
         (
             SELECT SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
