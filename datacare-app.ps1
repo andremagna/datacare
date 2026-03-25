@@ -224,8 +224,13 @@ $Config = @{
             OneDrive_Total_StorageUsedGB FLOAT,
             SharePoint_Total_File_Count INT,
             SharePoint_Total_StorageUsedGB FLOAT,
-            Users_Total INT,
-            CountryCountJSON NVARCHAR(MAX)
+            Users_Total INT
+        );"
+        CreateTable_CountryOrRegion = "
+        IF OBJECT_ID('dbo.CountryOrRegion','U') IS NULL
+        CREATE TABLE dbo.CountryOrRegion (
+            CountryName NVARCHAR(MAX),
+            CountryCount INT
         );"
     }
     Execution = @{
@@ -436,7 +441,6 @@ function Get-ExchangeMailboxDeepStats {
             -ErrorAction SilentlyContinue
 
         if ($archiveStats) {
-
             $result.Archive_Item_Count         = $archiveStats.ItemCount
             $result.Archive_TotalItemSize      = $archiveStats.TotalItemSize
             $result.Archive_SystemMessageCount = $archiveStats.SystemMessageCount
@@ -456,10 +460,8 @@ function Get-ExchangeMailboxDeepStats {
             if ($archiveRI) {
                 foreach ($folder in $archiveRI) {
                     if ($folder.Name -eq "Recoverable Items") {
-
                         $result.Archive_Recoverable_Count =
                             $folder.ItemsInFolderAndSubfolders
-
                         if ($folder.FolderAndSubfolderSize) {
                             $result.Archive_Recoverable_Size_Bytes =
                                 Convert-ToBytes $folder.FolderAndSubfolderSize
@@ -511,6 +513,7 @@ IF DB_ID(N'$($Config.Sql.SqlDBTarget)') IS NULL
         OneDrive     = $Config.Sql.CreateTable_OneDrive
         SharePoint   = $Config.Sql.CreateTable_SharePoint
         PowerBIDataModel = $Config.Sql.CreateTable_PowerBIDataModel
+        CountryOrRegion = $Config.Sql.CreateTable_CountryOrRegion
     }
 
     foreach ($table in $tables.GetEnumerator()) {
@@ -675,6 +678,7 @@ function Get-ReportCountFromDb {
             "SharePoint"  = "dbo.SharePoint"
             "Users"       = "dbo.Users"
             "PowerBIDataModel"   = "dbo.PowerBIDataModel"
+            "CountryOrRegion" = "dbo.CountryOrRegion"
         }
 
         if (-not $tableMap.ContainsKey($ReportName)) {
@@ -766,6 +770,7 @@ try {
         SharePoint = $Config.Sql.CreateTable_SharePoint
         Users      = $Config.Sql.CreateTable_Users
         PowerBIDataModel  = $Config.Sql.CreateTable_PowerBIDataModel
+        CountryOrRegion = $Config.Sql.CreateTable_CountryOrRegion
     }
     foreach ($report in $ReportTables.GetEnumerator()) {
         $reportName = $report.Key
@@ -1127,8 +1132,9 @@ try {
     STEP 3 - Creating final metrics for PowerBI
     ***************************************" -ForegroundColor Magenta
 
+    Write-Log "Creating tables details ..." -ForegroundColor Cyan
+
     $Date = Get-Date -Format "yyyy-MM-dd"
-    <#
     $query = "
     IF OBJECT_ID('DataCare.dbo.PowerBIDataModelBackup_$($Date)', 'U') IS NULL
     BEGIN
@@ -1325,238 +1331,35 @@ try {
         ) u
     ) Data;
     "
-    #>
-    $query = "
-    IF OBJECT_ID('DataCare.dbo.PowerBIDataModelBackup_$($Date)', 'U') IS NULL
-    BEGIN
-        SELECT *
-        INTO [DataCare].[dbo].[PowerBIDataModelBackup_$($Date)]
-        FROM (
-            SELECT
-                e.Exchange_Total_Primary_Item_Count,
-                e.Exchange_Total_Archive_Item_Count,
-                e.Exchange_Total_Primary_Total_Size_GB,
-                e.Exchange_Total_Archive_Total_Size_GB,
-                e.Exchange_Total_Primary_Total_Size_Bytes,
-                e.Exchange_Total_Primary_SystemMessage_Count,
-                e.Exchange_Total_Primary_SystemMessage_Size_Bytes,
-                e.Exchange_Total_Primary_Recoverable_Count,
-                e.Exchange_Total_Primary_Recoverable_Size_Bytes,
-                e.Exchange_Total_Archive_Total_Size_Bytes,
-                e.Exchange_Total_Archive_SystemMessage_Count,
-                e.Exchange_Total_Archive_SystemMessage_Size_Bytes,
-                e.Exchange_Total_Archive_Recoverable_Count,
-                e.Exchange_Total_Archive_Recoverable_Size_Bytes,
-                o.OneDrive_Total_File_Count,
-                o.OneDrive_Total_StorageUsedGB,
-                s.SharePoint_Total_File_Count,
-                s.SharePoint_Total_StorageUsedGB,
-                u.Users_Total,
-                -- aggiunta JSON per le nazioni
-                (SELECT STRING_AGG(CONCAT('""', CountryOrRegion, '""', ':', cnt), ',') 
-                FROM (
-                    SELECT CountryOrRegion, COUNT(*) AS cnt
-                    FROM [DataCare].[dbo].[Users]
-                    WHERE CountryOrRegion IS NOT NULL
-                    GROUP BY CountryOrRegion
-                ) AS countryData
-                ) AS CountryCountJSON
-            FROM
-            (
-                SELECT
-                    SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
-                    SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
-                    CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
-                    CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
-                    SUM(ISNULL([Primary_Total_Size_Bytes],0)) AS Exchange_Total_Primary_Total_Size_Bytes,
-                    SUM(ISNULL([Primary_SystemMessage_Count],0)) AS Exchange_Total_Primary_SystemMessage_Count,
-                    SUM(ISNULL([Primary_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Primary_SystemMessage_Size_Bytes,
-                    SUM(ISNULL([Primary_Recoverable_Count],0)) AS Exchange_Total_Primary_Recoverable_Count,
-                    SUM(ISNULL([Primary_Recoverable_Size_Bytes],0)) AS Exchange_Total_Primary_Recoverable_Size_Bytes,
-                    SUM(ISNULL([Archive_Total_Size_Bytes],0)) AS Exchange_Total_Archive_Total_Size_Bytes,
-                    SUM(ISNULL([Archive_SystemMessage_Count],0)) AS Exchange_Total_Archive_SystemMessage_Count,
-                    SUM(ISNULL([Archive_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Archive_SystemMessage_Size_Bytes,
-                    SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
-                    SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
-                FROM [DataCare].[dbo].[Exchange]
-            ) e
-            CROSS JOIN
-            (
-                SELECT SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
-                    SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
-                FROM [DataCare].[dbo].[OneDrive]
-            ) o
-            CROSS JOIN
-            (
-                SELECT SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
-                    SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
-                FROM [DataCare].[dbo].[SharePoint]
-            ) s
-            CROSS JOIN
-            (
-                SELECT COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
-                FROM [DataCare].[dbo].[Users]
-                WHERE [UserPrincipalName] IS NOT NULL
-            ) u
-        ) Data
-    END
-    ELSE
-    BEGIN
-        INSERT INTO [DataCare].[dbo].[PowerBIDataModelBackup_$($Date)]
-        SELECT * FROM (
-            -- stesso select di sopra, includendo CountryCountJSON
-            SELECT
-                e.Exchange_Total_Primary_Item_Count,
-                e.Exchange_Total_Archive_Item_Count,
-                e.Exchange_Total_Primary_Total_Size_GB,
-                e.Exchange_Total_Archive_Total_Size_GB,
-                e.Exchange_Total_Primary_Total_Size_Bytes,
-                e.Exchange_Total_Primary_SystemMessage_Count,
-                e.Exchange_Total_Primary_SystemMessage_Size_Bytes,
-                e.Exchange_Total_Primary_Recoverable_Count,
-                e.Exchange_Total_Primary_Recoverable_Size_Bytes,
-                e.Exchange_Total_Archive_Total_Size_Bytes,
-                e.Exchange_Total_Archive_SystemMessage_Count,
-                e.Exchange_Total_Archive_SystemMessage_Size_Bytes,
-                e.Exchange_Total_Archive_Recoverable_Count,
-                e.Exchange_Total_Archive_Recoverable_Size_Bytes,
-                o.OneDrive_Total_File_Count,
-                o.OneDrive_Total_StorageUsedGB,
-                s.SharePoint_Total_File_Count,
-                s.SharePoint_Total_StorageUsedGB,
-                u.Users_Total,
-                (SELECT STRING_AGG(CONCAT('""', CountryOrRegion, '""', ':', cnt), ',') 
-                FROM (
-                    SELECT CountryOrRegion, COUNT(*) AS cnt
-                    FROM [DataCare].[dbo].[Users]
-                    WHERE CountryOrRegion IS NOT NULL
-                    GROUP BY CountryOrRegion
-                ) AS countryData
-                ) AS CountryCountJSON
-            FROM
-            (
-                SELECT SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
-                    SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
-                    CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
-                    CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
-                    SUM(ISNULL([Primary_Total_Size_Bytes],0)) AS Exchange_Total_Primary_Total_Size_Bytes,
-                    SUM(ISNULL([Primary_SystemMessage_Count],0)) AS Exchange_Total_Primary_SystemMessage_Count,
-                    SUM(ISNULL([Primary_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Primary_SystemMessage_Size_Bytes,
-                    SUM(ISNULL([Primary_Recoverable_Count],0)) AS Exchange_Total_Primary_Recoverable_Count,
-                    SUM(ISNULL([Primary_Recoverable_Size_Bytes],0)) AS Exchange_Total_Primary_Recoverable_Size_Bytes,
-                    SUM(ISNULL([Archive_Total_Size_Bytes],0)) AS Exchange_Total_Archive_Total_Size_Bytes,
-                    SUM(ISNULL([Archive_SystemMessage_Count],0)) AS Exchange_Total_Archive_SystemMessage_Count,
-                    SUM(ISNULL([Archive_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Archive_SystemMessage_Size_Bytes,
-                    SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
-                    SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
-                FROM [DataCare].[dbo].[Exchange]
-            ) e
-            CROSS JOIN
-            (
-                SELECT SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
-                    SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
-                FROM [DataCare].[dbo].[OneDrive]
-            ) o
-            CROSS JOIN
-            (
-                SELECT SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
-                    SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
-                FROM [DataCare].[dbo].[SharePoint]
-            ) s
-            CROSS JOIN
-            (
-                SELECT COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
-                FROM [DataCare].[dbo].[Users]
-                WHERE [UserPrincipalName] IS NOT NULL
-            ) u
-        ) Data
-    END
-
-    -- Inserimento nella tabella finale
-    INSERT INTO [DataCare].[dbo].[PowerBIDataModel]
-    SELECT * FROM (
-        -- stesso select con CountryCountJSON
-        SELECT
-            e.Exchange_Total_Primary_Item_Count,
-            e.Exchange_Total_Archive_Item_Count,
-            e.Exchange_Total_Primary_Total_Size_GB,
-            e.Exchange_Total_Archive_Total_Size_GB,
-            e.Exchange_Total_Primary_Total_Size_Bytes,
-            e.Exchange_Total_Primary_SystemMessage_Count,
-            e.Exchange_Total_Primary_SystemMessage_Size_Bytes,
-            e.Exchange_Total_Primary_Recoverable_Count,
-            e.Exchange_Total_Primary_Recoverable_Size_Bytes,
-            e.Exchange_Total_Archive_Total_Size_Bytes,
-            e.Exchange_Total_Archive_SystemMessage_Count,
-            e.Exchange_Total_Archive_SystemMessage_Size_Bytes,
-            e.Exchange_Total_Archive_Recoverable_Count,
-            e.Exchange_Total_Archive_Recoverable_Size_Bytes,
-            o.OneDrive_Total_File_Count,
-            o.OneDrive_Total_StorageUsedGB,
-            s.SharePoint_Total_File_Count,
-            s.SharePoint_Total_StorageUsedGB,
-            u.Users_Total,
-            (SELECT STRING_AGG(CONCAT('""', CountryOrRegion, '""', ':', cnt), ',') 
-            FROM (
-                SELECT CountryOrRegion, COUNT(*) AS cnt
-                FROM [DataCare].[dbo].[Users]
-                WHERE CountryOrRegion IS NOT NULL
-                GROUP BY CountryOrRegion
-            ) AS countryData
-            ) AS CountryCountJSON
-        FROM
-        (
-            SELECT SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
-                SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
-                CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
-                CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
-                SUM(ISNULL([Primary_Total_Size_Bytes],0)) AS Exchange_Total_Primary_Total_Size_Bytes,
-                SUM(ISNULL([Primary_SystemMessage_Count],0)) AS Exchange_Total_Primary_SystemMessage_Count,
-                SUM(ISNULL([Primary_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Primary_SystemMessage_Size_Bytes,
-                SUM(ISNULL([Primary_Recoverable_Count],0)) AS Exchange_Total_Primary_Recoverable_Count,
-                SUM(ISNULL([Primary_Recoverable_Size_Bytes],0)) AS Exchange_Total_Primary_Recoverable_Size_Bytes,
-                SUM(ISNULL([Archive_Total_Size_Bytes],0)) AS Exchange_Total_Archive_Total_Size_Bytes,
-                SUM(ISNULL([Archive_SystemMessage_Count],0)) AS Exchange_Total_Archive_SystemMessage_Count,
-                SUM(ISNULL([Archive_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Archive_SystemMessage_Size_Bytes,
-                SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
-                SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
-            FROM [DataCare].[dbo].[Exchange]
-        ) e
-        CROSS JOIN
-        (
-            SELECT SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
-                SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
-            FROM [DataCare].[dbo].[OneDrive]
-        ) o
-        CROSS JOIN
-        (
-            SELECT SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
-                SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
-            FROM [DataCare].[dbo].[SharePoint]
-        ) s
-        CROSS JOIN
-        (
-            SELECT COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
-            FROM [DataCare].[dbo].[Users]
-            WHERE [UserPrincipalName] IS NOT NULL
-        ) u
-    ) Data;
-    "
     Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $query
 
-    $checkTablesQuery= "
+    $queryCountryOrRegion = "
+        INSERT INTO dbo.CountryOrRegion (CountryName, CountryCount)
+        SELECT 
+            CountryOrRegion AS CountryName,
+            COUNT(*) AS CountryCount
+        FROM dbo.Users
+        WHERE CountryOrRegion IS NOT NULL
+        GROUP BY CountryOrRegion
+        ORDER BY CountryCount DESC;
+    "
+    Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $queryCountryOrRegion
+
+    $checkTablesQuery = "
     SELECT 
         CASE 
             WHEN OBJECT_ID('DataCare.dbo.PowerBIDataModelBackup_$($Date)', 'U') IS NOT NULL
             AND OBJECT_ID('DataCare.dbo.PowerBIDataModel', 'U') IS NOT NULL
+            AND OBJECT_ID('DataCare.dbo.CountryOrRegion', 'U') IS NOT NULL
             THEN 1
             ELSE 0
         END AS TablesExist
     "
-    
     $result = Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $checkTablesQuery
     if ($result.TablesExist -eq 1) {
-        Write-Log "[DataCare].[dbo].[PowerBIDataModelBackup_$($Date)] and PowerBIDataModel created successfully." Green
+        Write-Log "[DataCare].[dbo].[PowerBIDataModel] table created successfully." Green
+        Write-Log "[DataCare].[dbo].[PowerBIDataModelBackup_$($Date)] table created successfully." Green
+        Write-Log "[DataCare].[dbo].[CountryOrRegion] table created successfully." Green
     }
     else {
         Write-Log "ERROR: One or both tables were not created correctly." Red
