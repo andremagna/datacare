@@ -1028,9 +1028,7 @@ try {
                     $RowsInserted  = 0
 
                     if ($ReportName -eq "Exchange") {
-                        $maxRetries = 5
                         $attempt = 0
-                        $success = $false
                         foreach ($Row in $Data) {
                             $ReportRefreshDate = ($Row.PSObject.Properties |
                                 Where-Object { $_.Name -like "*Report Refresh Date*" }).Name
@@ -1119,9 +1117,6 @@ try {
                                                 }
                                             }
                                         }
-                                    }
-                                    if (-not $success) {
-                                        Write-Log "Deep stats FAILED after $maxRetries attempts for $UserPrincipalName" -ForegroundColor Red
                                     }
                                 }
                                 else {
