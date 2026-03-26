@@ -740,6 +740,208 @@ function Invoke-GraphRequest {
     }
 }
 
+# DATAMODEL
+function CreatePowerBIDataModel {
+    $Date = Get-Date -Format "yyyy-MM-dd"
+    $query = "
+    IF OBJECT_ID('DataCare.dbo.PowerBIDataModelBackup_$($Date)', 'U') IS NULL
+    BEGIN
+        SELECT *
+        INTO [DataCare].[dbo].[PowerBIDataModelBackup_$($Date)]
+        FROM (
+            SELECT
+                e.Exchange_Total_Primary_Item_Count,
+                e.Exchange_Total_Archive_Item_Count,
+                e.Exchange_Total_Primary_Total_Size_GB,
+                e.Exchange_Total_Archive_Total_Size_GB,
+                e.Exchange_Total_Primary_Total_Size_Bytes,
+                e.Exchange_Total_Primary_SystemMessage_Count,
+                e.Exchange_Total_Primary_SystemMessage_Size_Bytes,
+                e.Exchange_Total_Primary_Recoverable_Count,
+                e.Exchange_Total_Primary_Recoverable_Size_Bytes,
+                e.Exchange_Total_Archive_Total_Size_Bytes,
+                e.Exchange_Total_Archive_SystemMessage_Count,
+                e.Exchange_Total_Archive_SystemMessage_Size_Bytes,
+                e.Exchange_Total_Archive_Recoverable_Count,
+                e.Exchange_Total_Archive_Recoverable_Size_Bytes,
+                o.OneDrive_Total_File_Count,
+                o.OneDrive_Total_StorageUsedGB,
+                s.SharePoint_Total_File_Count,
+                s.SharePoint_Total_StorageUsedGB,
+                u.Users_Total
+            FROM
+            (
+                SELECT
+                    SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
+                    SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
+                    CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
+                    CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
+                    SUM(ISNULL([Primary_Total_Size_Bytes],0)) AS Exchange_Total_Primary_Total_Size_Bytes,
+                    SUM(ISNULL([Primary_SystemMessage_Count],0)) AS Exchange_Total_Primary_SystemMessage_Count,
+                    SUM(ISNULL([Primary_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Primary_SystemMessage_Size_Bytes,
+                    SUM(ISNULL([Primary_Recoverable_Count],0)) AS Exchange_Total_Primary_Recoverable_Count,
+                    SUM(ISNULL([Primary_Recoverable_Size_Bytes],0)) AS Exchange_Total_Primary_Recoverable_Size_Bytes,
+                    SUM(ISNULL([Archive_Total_Size_Bytes],0)) AS Exchange_Total_Archive_Total_Size_Bytes,
+                    SUM(ISNULL([Archive_SystemMessage_Count],0)) AS Exchange_Total_Archive_SystemMessage_Count,
+                    SUM(ISNULL([Archive_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Archive_SystemMessage_Size_Bytes,
+                    SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
+                    SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
+                FROM [DataCare].[dbo].[Exchange]
+            ) e
+            CROSS JOIN
+            (
+                SELECT
+                    SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
+                    SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
+                FROM [DataCare].[dbo].[OneDrive]
+            ) o
+            CROSS JOIN
+            (
+                SELECT
+                    SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
+                    SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
+                FROM [DataCare].[dbo].[SharePoint]
+            ) s
+            CROSS JOIN
+            (
+                SELECT
+                    COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
+                FROM [DataCare].[dbo].[Users]
+                WHERE [UserPrincipalName] IS NOT NULL
+            ) u
+        ) Data
+    END
+    ELSE
+    BEGIN
+        INSERT INTO [DataCare].[dbo].[PowerBIDataModelBackup_$($Date)]
+        SELECT * FROM (
+            SELECT
+                e.Exchange_Total_Primary_Item_Count,
+                e.Exchange_Total_Archive_Item_Count,
+                e.Exchange_Total_Primary_Total_Size_GB,
+                e.Exchange_Total_Archive_Total_Size_GB,
+                e.Exchange_Total_Primary_Total_Size_Bytes,
+                e.Exchange_Total_Primary_SystemMessage_Count,
+                e.Exchange_Total_Primary_SystemMessage_Size_Bytes,
+                e.Exchange_Total_Primary_Recoverable_Count,
+                e.Exchange_Total_Primary_Recoverable_Size_Bytes,
+                e.Exchange_Total_Archive_Total_Size_Bytes,
+                e.Exchange_Total_Archive_SystemMessage_Count,
+                e.Exchange_Total_Archive_SystemMessage_Size_Bytes,
+                e.Exchange_Total_Archive_Recoverable_Count,
+                e.Exchange_Total_Archive_Recoverable_Size_Bytes,
+                o.OneDrive_Total_File_Count,
+                o.OneDrive_Total_StorageUsedGB,
+                s.SharePoint_Total_File_Count,
+                s.SharePoint_Total_StorageUsedGB,
+                u.Users_Total
+            FROM
+            (
+                SELECT
+                    SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
+                    SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
+                    CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
+                    CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
+                    SUM(ISNULL([Primary_Total_Size_Bytes],0)) AS Exchange_Total_Primary_Total_Size_Bytes,
+                    SUM(ISNULL([Primary_SystemMessage_Count],0)) AS Exchange_Total_Primary_SystemMessage_Count,
+                    SUM(ISNULL([Primary_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Primary_SystemMessage_Size_Bytes,
+                    SUM(ISNULL([Primary_Recoverable_Count],0)) AS Exchange_Total_Primary_Recoverable_Count,
+                    SUM(ISNULL([Primary_Recoverable_Size_Bytes],0)) AS Exchange_Total_Primary_Recoverable_Size_Bytes,
+                    SUM(ISNULL([Archive_Total_Size_Bytes],0)) AS Exchange_Total_Archive_Total_Size_Bytes,
+                    SUM(ISNULL([Archive_SystemMessage_Count],0)) AS Exchange_Total_Archive_SystemMessage_Count,
+                    SUM(ISNULL([Archive_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Archive_SystemMessage_Size_Bytes,
+                    SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
+                    SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
+                FROM [DataCare].[dbo].[Exchange]
+            ) e
+            CROSS JOIN
+            (
+                SELECT
+                    SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
+                    SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
+                FROM [DataCare].[dbo].[OneDrive]
+            ) o
+            CROSS JOIN
+            (
+                SELECT
+                    SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
+                    SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
+                FROM [DataCare].[dbo].[SharePoint]
+            ) s
+            CROSS JOIN
+            (
+                SELECT
+                    COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
+                FROM [DataCare].[dbo].[Users]
+                WHERE [UserPrincipalName] IS NOT NULL
+            ) u
+        ) Data
+    END
+
+    -- 2nd table
+    INSERT INTO [DataCare].[dbo].[PowerBIDataModel]
+    SELECT * FROM (
+        SELECT
+            e.Exchange_Total_Primary_Item_Count,
+            e.Exchange_Total_Archive_Item_Count,
+            e.Exchange_Total_Primary_Total_Size_GB,
+            e.Exchange_Total_Archive_Total_Size_GB,
+            e.Exchange_Total_Primary_Total_Size_Bytes,
+            e.Exchange_Total_Primary_SystemMessage_Count,
+            e.Exchange_Total_Primary_SystemMessage_Size_Bytes,
+            e.Exchange_Total_Primary_Recoverable_Count,
+            e.Exchange_Total_Primary_Recoverable_Size_Bytes,
+            e.Exchange_Total_Archive_Total_Size_Bytes,
+            e.Exchange_Total_Archive_SystemMessage_Count,
+            e.Exchange_Total_Archive_SystemMessage_Size_Bytes,
+            e.Exchange_Total_Archive_Recoverable_Count,
+            e.Exchange_Total_Archive_Recoverable_Size_Bytes,
+            o.OneDrive_Total_File_Count,
+            o.OneDrive_Total_StorageUsedGB,
+            s.SharePoint_Total_File_Count,
+            s.SharePoint_Total_StorageUsedGB,
+            u.Users_Total
+        FROM
+        (
+            SELECT SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
+                SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
+                CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
+                CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
+                SUM(ISNULL([Primary_Total_Size_Bytes],0)) AS Exchange_Total_Primary_Total_Size_Bytes,
+                SUM(ISNULL([Primary_SystemMessage_Count],0)) AS Exchange_Total_Primary_SystemMessage_Count,
+                SUM(ISNULL([Primary_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Primary_SystemMessage_Size_Bytes,
+                SUM(ISNULL([Primary_Recoverable_Count],0)) AS Exchange_Total_Primary_Recoverable_Count,
+                SUM(ISNULL([Primary_Recoverable_Size_Bytes],0)) AS Exchange_Total_Primary_Recoverable_Size_Bytes,
+                SUM(ISNULL([Archive_Total_Size_Bytes],0)) AS Exchange_Total_Archive_Total_Size_Bytes,
+                SUM(ISNULL([Archive_SystemMessage_Count],0)) AS Exchange_Total_Archive_SystemMessage_Count,
+                SUM(ISNULL([Archive_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Archive_SystemMessage_Size_Bytes,
+                SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
+                SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
+            FROM [DataCare].[dbo].[Exchange]
+        ) e
+        CROSS JOIN
+        (
+            SELECT SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
+                SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
+            FROM [DataCare].[dbo].[OneDrive]
+        ) o
+        CROSS JOIN
+        (
+            SELECT SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
+                SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
+            FROM [DataCare].[dbo].[SharePoint]
+        ) s
+        CROSS JOIN
+        (
+            SELECT COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
+            FROM [DataCare].[dbo].[Users]
+            WHERE [UserPrincipalName] IS NOT NULL
+        ) u
+    ) Data;
+    "
+    Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $query
+}
+
 
 # ======================
 #           MAIN
@@ -824,7 +1026,11 @@ try {
                     $RowsRetrievedExchange = 0
                     $RowsRetrievedOneDrive = 0
                     $RowsInserted  = 0
+
                     if ($ReportName -eq "Exchange") {
+                        $maxRetries = 5
+                        $attempt = 0
+                        $success = $false
                         foreach ($Row in $Data) {
                             $ReportRefreshDate = ($Row.PSObject.Properties |
                                 Where-Object { $_.Name -like "*Report Refresh Date*" }).Name
@@ -845,51 +1051,87 @@ try {
                                 if ($UserDepartment -eq $Config.Execution.Department) {
                                     Write-Host "User $UserPrincipalName in department: $($Config.Execution.Department)"
 
-                                    try {
-                                        $deepStats = Get-ExchangeMailboxDeepStats -UserPrincipalName $UserPrincipalName
+                                    $condition = $true
+                                    while ($condition) {
+                                        try {
+                                            $deepStats = Get-ExchangeMailboxDeepStats -UserPrincipalName $UserPrincipalName
 
-                                        $exchangeObject = [PSCustomObject]@{
-                                            displayName                 = $Row.'Display Name'
-                                            userPrincipalName           = $Row.'User Principal Name'
-                                            mail                        = $Row.'User Principal Name'
-                                            department                  = $Config.Execution.Department
-                                            Report_Refresh_Date         = $RefreshDate
-                                            Is_Deleted                  = $Row.'Is Deleted'
-                                            Deleted_Date                = $Row.'Deleted Date'
-                                            Created_Date                = $Row.'Created Date'
-                                            Last_Activity_Date          = $Row.'Last Activity Date'
-                                            Item_Count                  = $Row.'Item Count'
-                                            Storage_Used__Byte_         = $Row.'Storage Used (Byte)'
-                                            Issue_Warning_Quota__Byte_  = $Row.'Issue Warning Quota (Byte)'
-                                            Prohibit_Send_Quota__Byte_  = $Row.'Prohibit Send Quota (Byte)'
-                                            Prohibit_Send_Receive_Quota__Byte_ = $Row.'Prohibit Send/Receive Quota (Byte)'
-                                            Deleted_Item_Count          = $Row.'Deleted Item Count'
-                                            Deleted_Item_Size__Byte_    = $Row.'Deleted Item Size (Byte)'
-                                            Deleted_Item_Quota__Byte_   = $Row.'Deleted Item Quota (Byte)'
-                                            Has_Archive                 = $Row.'Has Archive'
-                                            Report_Period               = $Row.'Report Period'
+                                            $exchangeObject = [PSCustomObject]@{
+                                                displayName                 = $Row.'Display Name'
+                                                userPrincipalName           = $Row.'User Principal Name'
+                                                mail                        = $Row.'User Principal Name'
+                                                department                  = $UserDepartment
+                                                Report_Refresh_Date         = $RefreshDate
+                                                Is_Deleted                  = $Row.'Is Deleted'
+                                                Deleted_Date                = $Row.'Deleted Date'
+                                                Created_Date                = $Row.'Created Date'
+                                                Last_Activity_Date          = $Row.'Last Activity Date'
+                                                Item_Count                  = $Row.'Item Count'
+                                                Storage_Used__Byte_         = $Row.'Storage Used (Byte)'
+                                                Issue_Warning_Quota__Byte_  = $Row.'Issue Warning Quota (Byte)'
+                                                Prohibit_Send_Quota__Byte_  = $Row.'Prohibit Send Quota (Byte)'
+                                                Prohibit_Send_Receive_Quota__Byte_ = $Row.'Prohibit Send/Receive Quota (Byte)'
+                                                Deleted_Item_Count          = $Row.'Deleted Item Count'
+                                                Deleted_Item_Size__Byte_    = $Row.'Deleted Item Size (Byte)'
+                                                Deleted_Item_Quota__Byte_   = $Row.'Deleted Item Quota (Byte)'
+                                                Has_Archive                 = $Row.'Has Archive'
+                                                Report_Period               = $Row.'Report Period'
+                                            }
+                                            if ($deepStats) {
+                                                foreach ($key in $deepStats.Keys) {
+                                                    $exchangeObject | Add-Member -NotePropertyName $key -NotePropertyValue $deepStats[$key] -Force
+                                                }
+                                            }
+                                            Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
+                                            Write-ToSqlTable -TableName "Exchange" -Data @($exchangeObject)
+                                            $RowsInserted++
+                                            $condition = $false
                                         }
-                                        foreach ($key in $deepStats.Keys) {
-                                            $exchangeObject | Add-Member -NotePropertyName $key -NotePropertyValue $deepStats[$key] -Force
-                                        }
+                                        catch {
+                                            $attempt++
+                                            $statusCode = $null
+                                            $retry = $null
 
-                                        Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
-                                        Write-ToSqlTable -TableName "Exchange" -Data @($exchangeObject)
-                                        $RowsInserted++
+                                            if ($_.Exception.Response) {
+                                                $statusCode = $_.Exception.Response.StatusCode.value__
+                                                $retryHeader = $_.Exception.Response.Headers["Retry-After"]
+                                            }
+                                            switch ($statusCode) {
+                                                429 {
+                                                    if ($retryHeader -match '^\d+$') {
+                                                        $retry = [int]$retryHeader
+                                                    } else {
+                                                        $retry = 5
+                                                    }
+                                                    Write-Log "429 Throttling for $UserPrincipalName → retry in $retry sec (attempt $attempt)" -ForegroundColor Yellow
+                                                    Start-Sleep -Seconds $retry
+                                                }
+                                                {$_ -in @(500, 503)} {
+                                                    $retry = 5 * $attempt
+
+                                                    Write-Log "Server error $statusCode for $UserPrincipalName → retry in $retry sec (attempt $attempt)" -ForegroundColor Yellow
+                                                    Start-Sleep -Seconds $retry
+                                                }
+                                                default {
+                                                    Write-Log "Deep stats FAILED for $UserPrincipalName : $($_.Exception.Message)" -ForegroundColor Red
+                                                    $condition = $false
+                                                    throw
+                                                }
+                                            }
+                                        }
                                     }
-                                    catch {
-                                        Write-Log "Deep stats failed for $UserPrincipalName : $($_.Exception.Message)" -ForegroundColor Yellow
+                                    if (-not $success) {
+                                        Write-Log "Deep stats FAILED after $maxRetries attempts for $UserPrincipalName" -ForegroundColor Red
                                     }
                                 }
                                 else {
                                     Write-Host "Users $UserPrincipalName not in department: $($Config.Execution.Department)"
-                                    $OtherDepartment = "Other"
 
                                     $exchangeObject = [PSCustomObject]@{
                                             displayName                 = $Row.'Display Name'
                                             userPrincipalName           = $Row.'User Principal Name'
                                             mail                        = $Row.'User Principal Name'
-                                            department                  = $OtherDepartment
+                                            department                  = $UserDepartment
                                             Report_Refresh_Date         = $RefreshDate
                                             Is_Deleted                  = $Row.'Is Deleted'
                                             Deleted_Date                = $Row.'Deleted Date'
@@ -1126,7 +1368,6 @@ try {
             -RowsInserted ($TotalRowsInserted + $TotalRowsInsertedUsers) `
             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
 
-    #STEP 3: powerbi dashboard [1st view: PowerBIDataModelBackup_$($Date) where $($Date) is the first run // 2nd view: PowerBIDataModel]
     Write-Log "
     ***************************************
     STEP 3 - Creating final metrics for PowerBI
@@ -1134,204 +1375,7 @@ try {
 
     Write-Log "Creating tables details ..." -ForegroundColor Cyan
 
-    $Date = Get-Date -Format "yyyy-MM-dd"
-    $query = "
-    IF OBJECT_ID('DataCare.dbo.PowerBIDataModelBackup_$($Date)', 'U') IS NULL
-    BEGIN
-        SELECT *
-        INTO [DataCare].[dbo].[PowerBIDataModelBackup_$($Date)]
-        FROM (
-            SELECT
-                e.Exchange_Total_Primary_Item_Count,
-                e.Exchange_Total_Archive_Item_Count,
-                e.Exchange_Total_Primary_Total_Size_GB,
-                e.Exchange_Total_Archive_Total_Size_GB,
-                e.Exchange_Total_Primary_Total_Size_Bytes,
-                e.Exchange_Total_Primary_SystemMessage_Count,
-                e.Exchange_Total_Primary_SystemMessage_Size_Bytes,
-                e.Exchange_Total_Primary_Recoverable_Count,
-                e.Exchange_Total_Primary_Recoverable_Size_Bytes,
-                e.Exchange_Total_Archive_Total_Size_Bytes,
-                e.Exchange_Total_Archive_SystemMessage_Count,
-                e.Exchange_Total_Archive_SystemMessage_Size_Bytes,
-                e.Exchange_Total_Archive_Recoverable_Count,
-                e.Exchange_Total_Archive_Recoverable_Size_Bytes,
-                o.OneDrive_Total_File_Count,
-                o.OneDrive_Total_StorageUsedGB,
-                s.SharePoint_Total_File_Count,
-                s.SharePoint_Total_StorageUsedGB,
-                u.Users_Total
-            FROM
-            (
-                SELECT
-                    SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
-                    SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
-                    CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
-                    CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
-                    SUM(ISNULL([Primary_Total_Size_Bytes],0)) AS Exchange_Total_Primary_Total_Size_Bytes,
-                    SUM(ISNULL([Primary_SystemMessage_Count],0)) AS Exchange_Total_Primary_SystemMessage_Count,
-                    SUM(ISNULL([Primary_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Primary_SystemMessage_Size_Bytes,
-                    SUM(ISNULL([Primary_Recoverable_Count],0)) AS Exchange_Total_Primary_Recoverable_Count,
-                    SUM(ISNULL([Primary_Recoverable_Size_Bytes],0)) AS Exchange_Total_Primary_Recoverable_Size_Bytes,
-                    SUM(ISNULL([Archive_Total_Size_Bytes],0)) AS Exchange_Total_Archive_Total_Size_Bytes,
-                    SUM(ISNULL([Archive_SystemMessage_Count],0)) AS Exchange_Total_Archive_SystemMessage_Count,
-                    SUM(ISNULL([Archive_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Archive_SystemMessage_Size_Bytes,
-                    SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
-                    SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
-                FROM [DataCare].[dbo].[Exchange]
-            ) e
-            CROSS JOIN
-            (
-                SELECT
-                    SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
-                    SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
-                FROM [DataCare].[dbo].[OneDrive]
-            ) o
-            CROSS JOIN
-            (
-                SELECT
-                    SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
-                    SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
-                FROM [DataCare].[dbo].[SharePoint]
-            ) s
-            CROSS JOIN
-            (
-                SELECT
-                    COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
-                FROM [DataCare].[dbo].[Users]
-                WHERE [UserPrincipalName] IS NOT NULL
-            ) u
-        ) Data
-    END
-    ELSE
-    BEGIN
-        INSERT INTO [DataCare].[dbo].[PowerBIDataModelBackup_$($Date)]
-        SELECT * FROM (
-            SELECT
-                e.Exchange_Total_Primary_Item_Count,
-                e.Exchange_Total_Archive_Item_Count,
-                e.Exchange_Total_Primary_Total_Size_GB,
-                e.Exchange_Total_Archive_Total_Size_GB,
-                e.Exchange_Total_Primary_Total_Size_Bytes,
-                e.Exchange_Total_Primary_SystemMessage_Count,
-                e.Exchange_Total_Primary_SystemMessage_Size_Bytes,
-                e.Exchange_Total_Primary_Recoverable_Count,
-                e.Exchange_Total_Primary_Recoverable_Size_Bytes,
-                e.Exchange_Total_Archive_Total_Size_Bytes,
-                e.Exchange_Total_Archive_SystemMessage_Count,
-                e.Exchange_Total_Archive_SystemMessage_Size_Bytes,
-                e.Exchange_Total_Archive_Recoverable_Count,
-                e.Exchange_Total_Archive_Recoverable_Size_Bytes,
-                o.OneDrive_Total_File_Count,
-                o.OneDrive_Total_StorageUsedGB,
-                s.SharePoint_Total_File_Count,
-                s.SharePoint_Total_StorageUsedGB,
-                u.Users_Total
-            FROM
-            (
-                SELECT
-                    SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
-                    SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
-                    CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
-                    CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
-                    SUM(ISNULL([Primary_Total_Size_Bytes],0)) AS Exchange_Total_Primary_Total_Size_Bytes,
-                    SUM(ISNULL([Primary_SystemMessage_Count],0)) AS Exchange_Total_Primary_SystemMessage_Count,
-                    SUM(ISNULL([Primary_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Primary_SystemMessage_Size_Bytes,
-                    SUM(ISNULL([Primary_Recoverable_Count],0)) AS Exchange_Total_Primary_Recoverable_Count,
-                    SUM(ISNULL([Primary_Recoverable_Size_Bytes],0)) AS Exchange_Total_Primary_Recoverable_Size_Bytes,
-                    SUM(ISNULL([Archive_Total_Size_Bytes],0)) AS Exchange_Total_Archive_Total_Size_Bytes,
-                    SUM(ISNULL([Archive_SystemMessage_Count],0)) AS Exchange_Total_Archive_SystemMessage_Count,
-                    SUM(ISNULL([Archive_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Archive_SystemMessage_Size_Bytes,
-                    SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
-                    SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
-                FROM [DataCare].[dbo].[Exchange]
-            ) e
-            CROSS JOIN
-            (
-                SELECT
-                    SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
-                    SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
-                FROM [DataCare].[dbo].[OneDrive]
-            ) o
-            CROSS JOIN
-            (
-                SELECT
-                    SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
-                    SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
-                FROM [DataCare].[dbo].[SharePoint]
-            ) s
-            CROSS JOIN
-            (
-                SELECT
-                    COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
-                FROM [DataCare].[dbo].[Users]
-                WHERE [UserPrincipalName] IS NOT NULL
-            ) u
-        ) Data
-    END
-
-    -- 2nd table
-    INSERT INTO [DataCare].[dbo].[PowerBIDataModel]
-    SELECT * FROM (
-        SELECT
-            e.Exchange_Total_Primary_Item_Count,
-            e.Exchange_Total_Archive_Item_Count,
-            e.Exchange_Total_Primary_Total_Size_GB,
-            e.Exchange_Total_Archive_Total_Size_GB,
-            e.Exchange_Total_Primary_Total_Size_Bytes,
-            e.Exchange_Total_Primary_SystemMessage_Count,
-            e.Exchange_Total_Primary_SystemMessage_Size_Bytes,
-            e.Exchange_Total_Primary_Recoverable_Count,
-            e.Exchange_Total_Primary_Recoverable_Size_Bytes,
-            e.Exchange_Total_Archive_Total_Size_Bytes,
-            e.Exchange_Total_Archive_SystemMessage_Count,
-            e.Exchange_Total_Archive_SystemMessage_Size_Bytes,
-            e.Exchange_Total_Archive_Recoverable_Count,
-            e.Exchange_Total_Archive_Recoverable_Size_Bytes,
-            o.OneDrive_Total_File_Count,
-            o.OneDrive_Total_StorageUsedGB,
-            s.SharePoint_Total_File_Count,
-            s.SharePoint_Total_StorageUsedGB,
-            u.Users_Total
-        FROM
-        (
-            SELECT SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
-                SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
-                CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
-                CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
-                SUM(ISNULL([Primary_Total_Size_Bytes],0)) AS Exchange_Total_Primary_Total_Size_Bytes,
-                SUM(ISNULL([Primary_SystemMessage_Count],0)) AS Exchange_Total_Primary_SystemMessage_Count,
-                SUM(ISNULL([Primary_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Primary_SystemMessage_Size_Bytes,
-                SUM(ISNULL([Primary_Recoverable_Count],0)) AS Exchange_Total_Primary_Recoverable_Count,
-                SUM(ISNULL([Primary_Recoverable_Size_Bytes],0)) AS Exchange_Total_Primary_Recoverable_Size_Bytes,
-                SUM(ISNULL([Archive_Total_Size_Bytes],0)) AS Exchange_Total_Archive_Total_Size_Bytes,
-                SUM(ISNULL([Archive_SystemMessage_Count],0)) AS Exchange_Total_Archive_SystemMessage_Count,
-                SUM(ISNULL([Archive_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Archive_SystemMessage_Size_Bytes,
-                SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
-                SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
-            FROM [DataCare].[dbo].[Exchange]
-        ) e
-        CROSS JOIN
-        (
-            SELECT SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
-                SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
-            FROM [DataCare].[dbo].[OneDrive]
-        ) o
-        CROSS JOIN
-        (
-            SELECT SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
-                SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
-            FROM [DataCare].[dbo].[SharePoint]
-        ) s
-        CROSS JOIN
-        (
-            SELECT COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
-            FROM [DataCare].[dbo].[Users]
-            WHERE [UserPrincipalName] IS NOT NULL
-        ) u
-    ) Data;
-    "
-    Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $query
+    CreatePowerBIDataModel
 
     $queryCountryOrRegion = "
         INSERT INTO dbo.CountryOrRegion (CountryName, CountryCount)
@@ -1345,6 +1389,7 @@ try {
     "
     Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $queryCountryOrRegion
 
+    $Date = Get-Date -Format "yyyy-MM-dd"
     $checkTablesQuery = "
     SELECT 
         CASE 
