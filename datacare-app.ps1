@@ -14,14 +14,14 @@
         https://learn.microsoft.com/en-us/graph/api/reportroot-getonedriveusageaccountdetail?view=graph-rest-1.0&tabs=http
         - SharePoint site usage
         https://learn.microsoft.com/en-us/graph/api/reportroot-getsharepointsiteusagedetail?view=graph-rest-1.0&tabs=http
-        - Azure AD users
+        - Azure AD users usage
         https://learn.microsoft.com/en-us/graph/api/user-get?view=graph-rest-1.0&tabs=http
 
     All data is:
         - Logged with structured execution tracking
-        - Enriched with metadata (period, execution date, source report)
         - Stored into SQL Server tables (auto-created if not existing)
         - Tracked in dbo.ExecutionLog for auditing
+        - Enriched with metadata (period, execution date, source report) [Exchange]
 
     The script implements:
         - OAuth2 client credentials flow
@@ -46,8 +46,6 @@
         $TenantId
         $ClientId
         $ClientSecret
-    - Execution:
-        $Department
 
 .EXECUTION
     1. Open PowerShell with admin privileges
@@ -166,6 +164,7 @@ $Config = @{
             Visited_Page_Count INT,
             Storage_Used__Byte_ BIGINT,
             Storage_Allocated__Byte_ BIGINT,
+            Department NVARCHAR(50),
             Root_Web_Template NVARCHAR(100),
             Owner_Principal_Name NVARCHAR(255) NOT NULL,
             Report_Period NVARCHAR(50),
@@ -206,6 +205,7 @@ $Config = @{
         CreateTable_PowerBIDataModel = "
         IF OBJECT_ID('dbo.PowerBIDataModel','U') IS NULL
         CREATE TABLE dbo.PowerBIDataModel (
+            Department NVARCHAR(255),
             Exchange_Total_Primary_Item_Count INT,
             Exchange_Total_Archive_Item_Count INT,
             Exchange_Total_Primary_Total_Size_GB DECIMAL(18,2),
@@ -229,13 +229,14 @@ $Config = @{
         CreateTable_CountryOrRegion = "
         IF OBJECT_ID('dbo.CountryOrRegion','U') IS NULL
         CREATE TABLE dbo.CountryOrRegion (
+            Department NVARCHAR(255),
             CountryName NVARCHAR(MAX),
             CountryCount INT
         );"
     }
     Execution = @{
         Period     = "D180"
-        Department = "Information Technology"
+        #Department = "Information Technology"
     }
 }
 $masterConnectionString = "Server=$($Config.Sql.Server);Database=$($Config.Sql.SqlDBMaster);Trusted_Connection=True;TrustServerCertificate=True;"
@@ -744,12 +745,16 @@ function Invoke-GraphRequest {
 function CreatePowerBIDataModel {
     $Date = Get-Date -Format "yyyy-MM-dd"
     $query = "
+    -- ==============================================
+    -- 1st table
+    -- ==============================================
     IF OBJECT_ID('DataCare.dbo.PowerBIDataModelBackup_$($Date)', 'U') IS NULL
     BEGIN
         SELECT *
         INTO [DataCare].[dbo].[PowerBIDataModelBackup_$($Date)]
         FROM (
             SELECT
+                e.department,
                 e.Exchange_Total_Primary_Item_Count,
                 e.Exchange_Total_Archive_Item_Count,
                 e.Exchange_Total_Primary_Total_Size_GB,
@@ -772,6 +777,7 @@ function CreatePowerBIDataModel {
             FROM
             (
                 SELECT
+                    ISNULL(department,'Unknown') AS department,
                     SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
                     SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
                     CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
@@ -787,35 +793,44 @@ function CreatePowerBIDataModel {
                     SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
                     SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
                 FROM [DataCare].[dbo].[Exchange]
+                GROUP BY ISNULL(department,'Unknown')
             ) e
-            CROSS JOIN
+            LEFT JOIN
             (
                 SELECT
+                    ISNULL(department,'Unknown') AS department,
                     SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
                     SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
                 FROM [DataCare].[dbo].[OneDrive]
-            ) o
-            CROSS JOIN
+                GROUP BY ISNULL(department,'Unknown')
+            ) o ON e.department = o.department
+            LEFT JOIN
             (
                 SELECT
+                    ISNULL(department,'Unknown') AS department,
                     SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
                     SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
                 FROM [DataCare].[dbo].[SharePoint]
-            ) s
-            CROSS JOIN
+                GROUP BY ISNULL(department,'Unknown')
+            ) s ON e.department = s.department
+            LEFT JOIN
             (
                 SELECT
+                    ISNULL(department,'Unknown') AS department,
                     COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
                 FROM [DataCare].[dbo].[Users]
                 WHERE [UserPrincipalName] IS NOT NULL
-            ) u
+                GROUP BY ISNULL(department,'Unknown')
+            ) u ON e.department = u.department
         ) Data
     END
     ELSE
     BEGIN
         INSERT INTO [DataCare].[dbo].[PowerBIDataModelBackup_$($Date)]
-        SELECT * FROM (
+        SELECT *
+        FROM (
             SELECT
+                e.department,
                 e.Exchange_Total_Primary_Item_Count,
                 e.Exchange_Total_Archive_Item_Count,
                 e.Exchange_Total_Primary_Total_Size_GB,
@@ -838,6 +853,7 @@ function CreatePowerBIDataModel {
             FROM
             (
                 SELECT
+                    ISNULL(department,'Unknown') AS department,
                     SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
                     SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
                     CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
@@ -853,35 +869,46 @@ function CreatePowerBIDataModel {
                     SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
                     SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
                 FROM [DataCare].[dbo].[Exchange]
+                GROUP BY ISNULL(department,'Unknown')
             ) e
-            CROSS JOIN
+            LEFT JOIN
             (
                 SELECT
+                    ISNULL(department,'Unknown') AS department,
                     SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
                     SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
                 FROM [DataCare].[dbo].[OneDrive]
-            ) o
-            CROSS JOIN
+                GROUP BY ISNULL(department,'Unknown')
+            ) o ON e.department = o.department
+            LEFT JOIN
             (
                 SELECT
+                    ISNULL(department,'Unknown') AS department,
                     SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
                     SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
                 FROM [DataCare].[dbo].[SharePoint]
-            ) s
-            CROSS JOIN
+                GROUP BY ISNULL(department,'Unknown')
+            ) s ON e.department = s.department
+            LEFT JOIN
             (
                 SELECT
+                    ISNULL(department,'Unknown') AS department,
                     COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
                 FROM [DataCare].[dbo].[Users]
                 WHERE [UserPrincipalName] IS NOT NULL
-            ) u
+                GROUP BY ISNULL(department,'Unknown')
+            ) u ON e.department = u.department
         ) Data
     END
 
+    -- ==============================================
     -- 2nd table
+    -- ==============================================
     INSERT INTO [DataCare].[dbo].[PowerBIDataModel]
-    SELECT * FROM (
+    SELECT *
+    FROM (
         SELECT
+            e.department,
             e.Exchange_Total_Primary_Item_Count,
             e.Exchange_Total_Archive_Item_Count,
             e.Exchange_Total_Primary_Total_Size_GB,
@@ -903,7 +930,9 @@ function CreatePowerBIDataModel {
             u.Users_Total
         FROM
         (
-            SELECT SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
+            SELECT
+                ISNULL(department,'Unknown') AS department,
+                SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
                 SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
                 CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
                 CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
@@ -918,25 +947,35 @@ function CreatePowerBIDataModel {
                 SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
                 SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
             FROM [DataCare].[dbo].[Exchange]
+            GROUP BY ISNULL(department,'Unknown')
         ) e
-        CROSS JOIN
+        LEFT JOIN
         (
-            SELECT SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
+            SELECT
+                ISNULL(department,'Unknown') AS department,
+                SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
                 SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
             FROM [DataCare].[dbo].[OneDrive]
-        ) o
-        CROSS JOIN
+            GROUP BY ISNULL(department,'Unknown')
+        ) o ON e.department = o.department
+        LEFT JOIN
         (
-            SELECT SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
+            SELECT
+                ISNULL(department,'Unknown') AS department,
+                SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
                 SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
             FROM [DataCare].[dbo].[SharePoint]
-        ) s
-        CROSS JOIN
+            GROUP BY ISNULL(department,'Unknown')
+        ) s ON e.department = s.department
+        LEFT JOIN
         (
-            SELECT COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
+            SELECT
+                ISNULL(department,'Unknown') AS department,
+                COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
             FROM [DataCare].[dbo].[Users]
             WHERE [UserPrincipalName] IS NOT NULL
-        ) u
+            GROUP BY ISNULL(department,'Unknown')
+        ) u ON e.department = u.department
     ) Data;
     "
     Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $query
@@ -1046,83 +1085,12 @@ try {
                                 $Response = Invoke-GraphRequest -Url $Url -Headers $UserHeaders
                                 $UserDepartment = $Response.department
 
-                                if ($UserDepartment -eq $Config.Execution.Department) {
-                                    Write-Host "User $UserPrincipalName in department: $($Config.Execution.Department)"
+                                $condition = $true
+                                while ($condition) {
+                                    try {
+                                        $deepStats = Get-ExchangeMailboxDeepStats -UserPrincipalName $UserPrincipalName
 
-                                    $condition = $true
-                                    while ($condition) {
-                                        try {
-                                            $deepStats = Get-ExchangeMailboxDeepStats -UserPrincipalName $UserPrincipalName
-
-                                            $exchangeObject = [PSCustomObject]@{
-                                                displayName                 = $Row.'Display Name'
-                                                userPrincipalName           = $Row.'User Principal Name'
-                                                mail                        = $Row.'User Principal Name'
-                                                department                  = $UserDepartment
-                                                Report_Refresh_Date         = $RefreshDate
-                                                Is_Deleted                  = $Row.'Is Deleted'
-                                                Deleted_Date                = $Row.'Deleted Date'
-                                                Created_Date                = $Row.'Created Date'
-                                                Last_Activity_Date          = $Row.'Last Activity Date'
-                                                Item_Count                  = $Row.'Item Count'
-                                                Storage_Used__Byte_         = $Row.'Storage Used (Byte)'
-                                                Issue_Warning_Quota__Byte_  = $Row.'Issue Warning Quota (Byte)'
-                                                Prohibit_Send_Quota__Byte_  = $Row.'Prohibit Send Quota (Byte)'
-                                                Prohibit_Send_Receive_Quota__Byte_ = $Row.'Prohibit Send/Receive Quota (Byte)'
-                                                Deleted_Item_Count          = $Row.'Deleted Item Count'
-                                                Deleted_Item_Size__Byte_    = $Row.'Deleted Item Size (Byte)'
-                                                Deleted_Item_Quota__Byte_   = $Row.'Deleted Item Quota (Byte)'
-                                                Has_Archive                 = $Row.'Has Archive'
-                                                Report_Period               = $Row.'Report Period'
-                                            }
-                                            if ($deepStats) {
-                                                foreach ($key in $deepStats.Keys) {
-                                                    $exchangeObject | Add-Member -NotePropertyName $key -NotePropertyValue $deepStats[$key] -Force
-                                                }
-                                            }
-                                            Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
-                                            Write-ToSqlTable -TableName "Exchange" -Data @($exchangeObject)
-                                            $RowsInserted++
-                                            $condition = $false
-                                        }
-                                        catch {
-                                            $attempt++
-                                            $statusCode = $null
-                                            $retry = $null
-
-                                            if ($_.Exception.Response) {
-                                                $statusCode = $_.Exception.Response.StatusCode.value__
-                                                $retryHeader = $_.Exception.Response.Headers["Retry-After"]
-                                            }
-                                            switch ($statusCode) {
-                                                429 {
-                                                    if ($retryHeader -match '^\d+$') {
-                                                        $retry = [int]$retryHeader
-                                                    } else {
-                                                        $retry = 5
-                                                    }
-                                                    Write-Log "429 Throttling for $UserPrincipalName → retry in $retry sec (attempt $attempt)" -ForegroundColor Yellow
-                                                    Start-Sleep -Seconds $retry
-                                                }
-                                                {$_ -in @(500, 503)} {
-                                                    $retry = 5 * $attempt
-
-                                                    Write-Log "Server error $statusCode for $UserPrincipalName → retry in $retry sec (attempt $attempt)" -ForegroundColor Yellow
-                                                    Start-Sleep -Seconds $retry
-                                                }
-                                                default {
-                                                    Write-Log "Deep stats FAILED for $UserPrincipalName : $($_.Exception.Message)" -ForegroundColor Red
-                                                    $condition = $false
-                                                    throw
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                else {
-                                    Write-Host "Users $UserPrincipalName not in department: $($Config.Execution.Department)"
-
-                                    $exchangeObject = [PSCustomObject]@{
+                                        $exchangeObject = [PSCustomObject]@{
                                             displayName                 = $Row.'Display Name'
                                             userPrincipalName           = $Row.'User Principal Name'
                                             mail                        = $Row.'User Principal Name'
@@ -1143,10 +1111,48 @@ try {
                                             Has_Archive                 = $Row.'Has Archive'
                                             Report_Period               = $Row.'Report Period'
                                         }
+                                        if ($deepStats) {
+                                            foreach ($key in $deepStats.Keys) {
+                                                $exchangeObject | Add-Member -NotePropertyName $key -NotePropertyValue $deepStats[$key] -Force
+                                            }
+                                        }
+                                        Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
+                                        Write-ToSqlTable -TableName "Exchange" -Data @($exchangeObject)
+                                        $RowsInserted++
+                                        $condition = $false
+                                    }
+                                    catch {
+                                        $attempt++
+                                        $statusCode = $null
+                                        $retry = $null
 
-                                    Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
-                                    Write-ToSqlTable -TableName $ReportName -Data @($exchangeObject)   
-                                    $RowsInserted++
+                                        if ($_.Exception.Response) {
+                                            $statusCode = $_.Exception.Response.StatusCode.value__
+                                            $retryHeader = $_.Exception.Response.Headers["Retry-After"]
+                                        }
+                                        switch ($statusCode) {
+                                            429 {
+                                                if ($retryHeader -match '^\d+$') {
+                                                    $retry = [int]$retryHeader
+                                                } else {
+                                                    $retry = 5
+                                                }
+                                                Write-Log "429 Throttling for $UserPrincipalName → retry in $retry sec (attempt $attempt)" -ForegroundColor Yellow
+                                                Start-Sleep -Seconds $retry
+                                            }
+                                            {$_ -in @(500, 503)} {
+                                                $retry = 5 * $attempt
+
+                                                Write-Log "Server error $statusCode for $UserPrincipalName → retry in $retry sec (attempt $attempt)" -ForegroundColor Yellow
+                                                Start-Sleep -Seconds $retry
+                                            }
+                                            default {
+                                                Write-Log "Deep stats FAILED for $UserPrincipalName : $($_.Exception.Message)" -ForegroundColor Red
+                                                $condition = $false
+                                                throw
+                                            }
+                                        }
+                                    }
                                 }
                             } 
                             catch {
@@ -1172,7 +1178,6 @@ try {
                             $UserPrincipalName = $Row.'Owner Principal Name'.Trim() -replace "^[\uFEFF]", ""
                             if ([string]::IsNullOrEmpty($UserPrincipalName)) {
                                 Write-Log "UPN is empty" -ForegroundColor Yellow
-                                continue
                             }
                             $EncodedUpn = [System.Uri]::EscapeDataString($UserPrincipalName)
                             $Url = "https://graph.microsoft.com/v1.0/users/"+$EncodedUpn+"?`$select=department"
@@ -1181,64 +1186,31 @@ try {
                                 $Response = Invoke-GraphRequest -Url $Url -Headers $UserHeaders
                                 $UserDepartment = $Response.department
 
-                                if ($UserDepartment -eq $Department) {
-                                    Write-Host "Users $UserPrincipalName not in department: $($Config.Execution.Department)"
-                                    $OtherDepartment = "Other"
+                                $oneDriveObject = [PSCustomObject]@{
+                                    StorageUsedGB            = $StorageUsedGB
+                                    ___Report_Refresh_Date   = $RefreshDate
+                                    Site_Id                  = $Row.'Site Id'
+                                    Site_URL                 = $Row.'Site URL'
+                                    Owner_Display_Name       = $Row.'Owner Display Name'
+                                    Is_Deleted               = $Row.'Is Deleted'
+                                    Last_Activity_Date       = $Row.'Last Activity Date'
+                                    File_Count               = $Row.'File Count'
+                                    Active_File_Count        = $Row.'Active File Count'
+                                    Storage_Used__Byte_      = $Row.'Storage Used (Byte)'
+                                    Storage_Allocated__Byte_ = $Row.'Storage Allocated (Byte)'
+                                    Owner_Principal_Name     = $Row.'Owner Principal Name'
+                                    Report_Period            = $Row.'Report Period'
+                                    department               = $UserDepartment
+                                    ReportPeriod             = $Period
+                                    ReportDate               = $RefreshDate
+                                    InsertedAt               = (Get-Date)
+                                    SourceReport             = $ReportName    
+                                    }
 
-                                    $oneDriveObject = [PSCustomObject]@{
-                                        StorageUsedGB            = $StorageUsedGB
-                                        ___Report_Refresh_Date   = $RefreshDate
-                                        Site_Id                  = $Row.'Site Id'
-                                        Site_URL                 = $Row.'Site URL'
-                                        Owner_Display_Name       = $Row.'Owner Display Name'
-                                        Is_Deleted               = $Row.'Is Deleted'
-                                        Last_Activity_Date       = $Row.'Last Activity Date'
-                                        File_Count               = $Row.'File Count'
-                                        Active_File_Count        = $Row.'Active File Count'
-                                        Storage_Used__Byte_      = $Row.'Storage Used (Byte)'
-                                        Storage_Allocated__Byte_ = $Row.'Storage Allocated (Byte)'
-                                        Owner_Principal_Name     = $Row.'Owner Principal Name'
-                                        Report_Period            = $Row.'Report Period'
-                                        department               = $Config.Execution.Department
-                                        ReportPeriod             = $Period
-                                        ReportDate               = $RefreshDate
-                                        InsertedAt               = (Get-Date)
-                                        SourceReport             = $ReportName    
-                                        }
-
-                                    Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
-                                    Write-ToSqlTable -TableName $ReportName -Data @($oneDriveObject) 
-                                    $RowsInserted++
-                                }
-                                else {
-                                    Write-Host "Users $UserPrincipalName not in department: $($Config.Execution.Department)"
-                                    $OtherDepartment = "Other"
-
-                                    $oneDriveObject = [PSCustomObject]@{
-                                        StorageUsedGB            = $StorageUsedGB
-                                        ___Report_Refresh_Date   = $RefreshDate
-                                        Site_Id                  = $Row.'Site Id'
-                                        Site_URL                 = $Row.'Site URL'
-                                        Owner_Display_Name       = $Row.'Owner Display Name'
-                                        Is_Deleted               = $Row.'Is Deleted'
-                                        Last_Activity_Date       = $Row.'Last Activity Date'
-                                        File_Count               = $Row.'File Count'
-                                        Active_File_Count        = $Row.'Active File Count'
-                                        Storage_Used__Byte_      = $Row.'Storage Used (Byte)'
-                                        Storage_Allocated__Byte_ = $Row.'Storage Allocated (Byte)'
-                                        Owner_Principal_Name     = $Row.'Owner Principal Name'
-                                        Report_Period            = $Row.'Report Period'
-                                        department               = $OtherDepartment
-                                        ReportPeriod             = $Period
-                                        ReportDate               = $RefreshDate
-                                        InsertedAt               = (Get-Date)
-                                        SourceReport             = $ReportName   
-                                        }
-
-                                    Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
-                                    Write-ToSqlTable -TableName $ReportName -Data @($oneDriveObject) 
-                                    $RowsInserted++  
-                                }
+                                Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
+                                Write-ToSqlTable -TableName $ReportName -Data @($oneDriveObject) 
+                                $RowsInserted++
+                                
                             } 
                             catch {
                                 Write-Log "Error while recovering department for $UserPrincipalName : $_" -ForegroundColor Yellow
@@ -1254,25 +1226,103 @@ try {
                             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
                     }
                     else {
-                        Write-Log "Writing $ReportName records into SQLServer ..." -ForegroundColor Cyan
-                        Write-ToSqlTable -TableName $ReportName -Data $Data                   
+                        foreach ($Row in $Data) {
+                            $RootWebTemplate = $Row.'Root Web Template'
+
+                            $ReportRefreshDate = ($Row.PSObject.Properties |
+                                Where-Object { $_.Name -like "*Report Refresh Date*" }).Name
+                            $RefreshDate = $Row.$ReportRefreshDate
+
+                            $UserPrincipalName = $Row.'Owner Principal Name'.Trim() -replace "^[\uFEFF]", ""
+                            if ([string]::IsNullOrEmpty($UserPrincipalName)) {
+                                Write-Log "UPN is empty" -ForegroundColor Yellow
+                            }
+                            
+                            if ($RootWebTemplate -eq "Site Page Publishing") {
+                                $EncodedUpn = [System.Uri]::EscapeDataString($UserPrincipalName)
+                                $Url = "https://graph.microsoft.com/v1.0/users/"+$EncodedUpn+"?`$select=department"
+                                try {
+                                    $Response = Invoke-GraphRequest -Url $Url -Headers $UserHeaders
+                                    $UserDepartment = $Response.department
+
+                                    $sharePointObject = [PSCustomObject]@{
+                                            StorageUsedGB            = $StorageUsedGB
+                                            ___Report_Refresh_Date   = $RefreshDate
+                                            Site_Id                  = $Row.'Site Id'
+                                            Site_URL                 = $Row.'Site URL'
+                                            Owner_Display_Name       = $Row.'Owner Display Name'
+                                            Is_Deleted               = $Row.'Is Deleted'
+                                            Last_Activity_Date       = $Row.'Last Activity Date'
+                                            File_Count               = $Row.'File Count'
+                                            Active_File_Count        = $Row.'Active File Count'
+                                            Storage_Used__Byte_      = $Row.'Storage Used (Byte)'
+                                            Storage_Allocated__Byte_ = $Row.'Storage Allocated (Byte)'
+                                            Owner_Principal_Name     = $Row.'Owner Principal Name'
+                                            Report_Period            = $Row.'Report Period'
+                                            Page_View_Count          = $Row.'Page View Count'
+                                            Visited_Page_Count       = $Row.'Visited Page Count'
+                                            Root_Web_Template        = $Row.'Root Web Template'
+                                            department               = $UserDepartment
+                                            ReportPeriod             = $Period
+                                            ReportDate               = $RefreshDate
+                                            InsertedAt               = (Get-Date)
+                                            SourceReport             = $ReportName    
+                                        }
+
+                                    Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
+                                    Write-ToSqlTable -TableName $ReportName -Data @($sharePointObject) 
+                                    $RowsInserted++
+                                } 
+                                catch {
+                                    Write-Log "Error while recovering department for $UserPrincipalName : $_" -ForegroundColor Yellow
+                                }
+                            } 
+                            else {
+                                $sharePointObject = [PSCustomObject]@{
+                                    StorageUsedGB            = $StorageUsedGB
+                                    ___Report_Refresh_Date   = $RefreshDate
+                                    Site_Id                  = $Row.'Site Id'
+                                    Site_URL                 = $Row.'Site URL'
+                                    Owner_Display_Name       = $Row.'Owner Display Name'
+                                    Is_Deleted               = $Row.'Is Deleted'
+                                    Last_Activity_Date       = $Row.'Last Activity Date'
+                                    File_Count               = $Row.'File Count'
+                                    Active_File_Count        = $Row.'Active File Count'
+                                    Storage_Used__Byte_      = $Row.'Storage Used (Byte)'
+                                    Storage_Allocated__Byte_ = $Row.'Storage Allocated (Byte)'
+                                    Owner_Principal_Name     = $Row.'Owner Principal Name'
+                                    Report_Period            = $Row.'Report Period'
+                                    Page_View_Count          = $Row.'Page View Count'
+                                    Visited_Page_Count       = $Row.'Visited Page Count'
+                                    Root_Web_Template        = $Row.'Root Web Template'
+                                    department               = "NULL"
+                                    ReportPeriod             = $Period
+                                    ReportDate               = $RefreshDate
+                                    InsertedAt               = (Get-Date)
+                                    SourceReport             = $ReportName    
+                                }
+
+                                Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
+                                Write-ToSqlTable -TableName $ReportName -Data @($sharePointObject) 
+                                $RowsInserted++
+                            } 
+                        }
+    
+                        $RowsRetrievedSharePoint = $Data.Count
                         Write-ExecutionLog `
                             -ExecutionId $ExecutionId `
                             -ReportName $ReportName `
                             -Status "SUCCESS" `
-                            -RowsRetrieved $Data.Count `
-                            -RowsInserted $Data.Count `
+                            -RowsRetrieved $RowsRetrievedSharePoint `
+                            -RowsInserted $RowsInserted `
                             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
-
-                        $OthersInserted = $Data.Count
-                        $OthersRetrieved = $Data.Count
                     }
+
                     $TotalRowsRetrieved += $RowsRetrievedExchange
                     $TotalRowsRetrieved += $RowsRetrievedOneDrive
-                    $TotalRowsRetrieved += $OthersRetrieved
+                    $TotalRowsRetrieved += $RowsRetrievedSharePoint
 
                     $TotalRowsInserted += $RowsInserted
-                    $TotalRowsInserted += $OthersInserted
                 }
                 else {
                     Write-Log "No data returned for $ReportName" -ForegroundColor Yellow
@@ -1373,14 +1423,15 @@ try {
     CreatePowerBIDataModel
 
     $queryCountryOrRegion = "
-        INSERT INTO dbo.CountryOrRegion (CountryName, CountryCount)
+        INSERT INTO dbo.CountryOrRegion (Department, CountryName, CountryCount)
         SELECT 
+            ISNULL(Department, 'Unknown') AS Department,
             CountryOrRegion AS CountryName,
             COUNT(*) AS CountryCount
         FROM dbo.Users
         WHERE CountryOrRegion IS NOT NULL
-        GROUP BY CountryOrRegion
-        ORDER BY CountryCount DESC;
+        GROUP BY ISNULL(Department, 'Unknown'), CountryOrRegion
+        ORDER BY Department, CountryCount DESC;
     "
     Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $queryCountryOrRegion
 
