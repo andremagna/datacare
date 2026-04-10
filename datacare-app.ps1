@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-    Microsoft 365 Usage Data Collector and SQL Server Loader
+    Microsoft 365 Data Collector and SQL Server Loader
 
 .DESCRIPTION
-    This script authenticates to Microsoft 365 and Exchange Online using application permissions
-    and retrieves usage and activity details.
+    This script authenticates to Microsoft Graph and Exchange Online using application permissions
+    and retrieves usage, activity details and custom fields.
 
     Retrieved data includes:
         - Exchange mailbox usage
@@ -30,7 +30,7 @@
 
 .REQUIREMENTS
     - PowerShell 5.1 or higher
-    - Internet access to:
+    - Access to:
         * https://login.microsoftonline.com
         * https://graph.microsoft.com
         * reports*.office.com (Graph reports redirect)
@@ -80,8 +80,8 @@ $Config = @{
         SqlDBMaster = "master"
         SqlDBTarget = "DataCare"
         CreateTable_Exchange = "
-        IF OBJECT_ID('dbo.Exchange','U') IS NULL
-        CREATE TABLE dbo.Exchange (
+        IF OBJECT_ID('dbo.MicrosoftExchange','U') IS NULL
+        CREATE TABLE dbo.MicrosoftExchange (
             StorageUsedGB FLOAT,
             ___Report_Refresh_Date NVARCHAR(50),
             User_Principal_Name NVARCHAR(255) NOT NULL,
@@ -127,8 +127,8 @@ $Config = @{
             Archive_Recoverable_Mode NVARCHAR(50)
         );"
         CreateTable_OneDrive = "
-        IF OBJECT_ID('dbo.OneDrive','U') IS NULL
-        CREATE TABLE dbo.OneDrive (
+        IF OBJECT_ID('dbo.MicrosoftOneDrive','U') IS NULL
+        CREATE TABLE dbo.MicrosoftOneDrive (
             StorageUsedGB FLOAT,
             ___Report_Refresh_Date NVARCHAR(50),
             Site_Id NVARCHAR(255),
@@ -149,8 +149,8 @@ $Config = @{
             SourceReport NVARCHAR(100)
         );"
         CreateTable_SharePoint = "
-        IF OBJECT_ID('dbo.SharePoint','U') IS NULL
-        CREATE TABLE dbo.SharePoint (
+        IF OBJECT_ID('dbo.MicrosoftSharePoint','U') IS NULL
+        CREATE TABLE dbo.MicrosoftSharePoint (
             StorageUsedGB FLOAT,
             ___Report_Refresh_Date NVARCHAR(50),
             Site_Id NVARCHAR(255),
@@ -166,7 +166,7 @@ $Config = @{
             Storage_Allocated__Byte_ BIGINT,
             Department NVARCHAR(50),
             Root_Web_Template NVARCHAR(100),
-            Owner_Principal_Name NVARCHAR(255) NOT NULL,
+            Owner_Principal_Name NVARCHAR(255),
             Report_Period NVARCHAR(50),
             ReportPeriod NVARCHAR(50),
             ReportDate DATETIME2,
@@ -174,8 +174,8 @@ $Config = @{
             SourceReport NVARCHAR(100)
         );"
         CreateTable_Users = "
-        IF OBJECT_ID('dbo.Users','U') IS NULL
-        CREATE TABLE dbo.Users (
+        IF OBJECT_ID('dbo.MicrosoftUsers','U') IS NULL
+        CREATE TABLE dbo.MicrosoftUsers (
             Id NVARCHAR(255),
             DisplayName NVARCHAR(255),
             UserPrincipalName NVARCHAR(255) NOT NULL,
@@ -202,33 +202,9 @@ $Config = @{
             MachineName NVARCHAR(255),
             PowerShellVersion NVARCHAR(50)
         );"   
-        CreateTable_PowerBIDataModel = "
-        IF OBJECT_ID('dbo.PowerBIDataModel','U') IS NULL
-        CREATE TABLE dbo.PowerBIDataModel (
-            Department NVARCHAR(255),
-            Exchange_Total_Primary_Item_Count INT,
-            Exchange_Total_Archive_Item_Count INT,
-            Exchange_Total_Primary_Total_Size_GB DECIMAL(18,2),
-            Exchange_Total_Archive_Total_Size_GB DECIMAL(18,2),
-            Exchange_Total_Primary_Total_Size_Bytes BIGINT,
-            Exchange_Total_Primary_SystemMessage_Count INT,
-            Exchange_Total_Primary_SystemMessage_Size_Bytes BIGINT,
-            Exchange_Total_Primary_Recoverable_Count INT,
-            Exchange_Total_Primary_Recoverable_Size_Bytes BIGINT,
-            Exchange_Total_Archive_Total_Size_Bytes BIGINT,
-            Exchange_Total_Archive_SystemMessage_Count INT,
-            Exchange_Total_Archive_SystemMessage_Size_Bytes BIGINT,
-            Exchange_Total_Archive_Recoverable_Count INT,
-            Exchange_Total_Archive_Recoverable_Size_Bytes BIGINT,
-            OneDrive_Total_File_Count INT,
-            OneDrive_Total_StorageUsedGB FLOAT,
-            SharePoint_Total_File_Count INT,
-            SharePoint_Total_StorageUsedGB FLOAT,
-            Users_Total INT
-        );"
-        CreateTable_CountryOrRegion = "
-        IF OBJECT_ID('dbo.CountryOrRegion','U') IS NULL
-        CREATE TABLE dbo.CountryOrRegion (
+        CreateTable_PowerBICountryOrRegion = "
+        IF OBJECT_ID('dbo.PowerBICountryOrRegion','U') IS NULL
+        CREATE TABLE dbo.PowerBICountryOrRegion (
             Department NVARCHAR(255),
             CountryName NVARCHAR(MAX),
             CountryCount INT
@@ -236,7 +212,6 @@ $Config = @{
     }
     Execution = @{
         Period     = "D180"
-        #Department = "Information Technology"
     }
 }
 $masterConnectionString = "Server=$($Config.Sql.Server);Database=$($Config.Sql.SqlDBMaster);Trusted_Connection=True;TrustServerCertificate=True;"
@@ -254,7 +229,7 @@ function Write-Log {
 
     $dateTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $line = "$dateTime - $Message"
-    [System.IO.File]::AppendAllText("$PSScriptRoot\DataCare.log", "$line`r`n")
+    [System.IO.File]::AppendAllText("$PSScriptRoot\datacare.log", "$line`r`n")
     Write-Host $line -ForegroundColor $ForegroundColor
 }
 
@@ -509,12 +484,11 @@ IF DB_ID(N'$($Config.Sql.SqlDBTarget)') IS NULL
 
     $tables = @{
         ExecutionLog = $Config.Sql.CreateTable_ExecutionLog
-        Users        = $Config.Sql.CreateTable_Users
-        Exchange     = $Config.Sql.CreateTable_Exchange
-        OneDrive     = $Config.Sql.CreateTable_OneDrive
-        SharePoint   = $Config.Sql.CreateTable_SharePoint
-        PowerBIDataModel = $Config.Sql.CreateTable_PowerBIDataModel
-        CountryOrRegion = $Config.Sql.CreateTable_CountryOrRegion
+        MicrosoftUsers        = $Config.Sql.CreateTable_Users
+        MicrosoftExchange     = $Config.Sql.CreateTable_Exchange
+        MicrosoftOneDrive     = $Config.Sql.CreateTable_OneDrive
+        MicrosoftSharePoint   = $Config.Sql.CreateTable_SharePoint
+        PowerBICountryOrRegion = $Config.Sql.CreateTable_PowerBICountryOrRegion
     }
 
     foreach ($table in $tables.GetEnumerator()) {
@@ -608,7 +582,6 @@ function Write-ToSqlTable {
                     continue
                 }
                 if ($normalizedSql -eq "storageusedgb") {
-
                     if ($propertyMap.ContainsKey("storageusedbyte")) {
                         $bytes = $row.($propertyMap["storageusedbyte"])
                         $dr[$sqlCol] = if ($bytes) { [math]::Round(($bytes / 1GB),2) } else { [DBNull]::Value }
@@ -669,24 +642,23 @@ function Write-ToSqlTable {
 function Get-ReportCountFromDb {
     param(
         [Parameter(Mandatory=$true)]
-        [string]$ReportName
+        [string]$Table
     )
 
     try {
         $tableMap = @{
-            "Exchange"    = "dbo.Exchange"
-            "OneDrive"    = "dbo.OneDrive"
-            "SharePoint"  = "dbo.SharePoint"
-            "Users"       = "dbo.Users"
-            "PowerBIDataModel"   = "dbo.PowerBIDataModel"
-            "CountryOrRegion" = "dbo.CountryOrRegion"
+            "MicrosoftExchange"    = "dbo.MicrosoftExchange"
+            "MicrosoftOneDrive"    = "dbo.MicrosoftOneDrive"
+            "MicrosoftSharePoint"  = "dbo.MicrosoftSharePoint"
+            "MicrosoftUsers"       = "dbo.MicrosoftUsers"
+            "PowerBICountryOrRegion" = "dbo.PowerBICountryOrRegion"
         }
 
-        if (-not $tableMap.ContainsKey($ReportName)) {
-            throw "Unknown report name: $ReportName"
+        if (-not $tableMap.ContainsKey($Table)) {
+            throw "Unknown report name: $Table"
         }
 
-        $tableName = $tableMap[$ReportName]
+        $tableName = $tableMap[$Table]
         $query = "SELECT COUNT(*) AS Total FROM $tableName"
         $result = Invoke-Sqlcmd `
             -ConnectionString $targetConnectionString `
@@ -694,9 +666,136 @@ function Get-ReportCountFromDb {
         return [int]$result.Total
     }
     catch {
-        Write-Log "Failed to retrieve $ReportName count from DB: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Log "Failed to retrieve $Table count from DB: $($_.Exception.Message)" -ForegroundColor Red
         throw
     }
+}
+
+# POWERBI KPI DATAMODEL
+function CreatePowerBIDataModelHistory {
+        $query = @"
+IF OBJECT_ID('$($Config.Sql.SqlDBTarget).dbo.PowerBIDataModelHistory', 'U') IS NULL
+BEGIN
+    CREATE TABLE [$($Config.Sql.SqlDBTarget)].[dbo].[PowerBIDataModelHistory]
+    (
+        ExecutionId UNIQUEIDENTIFIER,
+        [Date] DATETIME,
+        department NVARCHAR(255),
+        Exchange_Total_Primary_Item_Count BIGINT,
+        Exchange_Total_Archive_Item_Count BIGINT,
+        Exchange_Total_Primary_Total_Size_GB DECIMAL(18,2),
+        Exchange_Total_Archive_Total_Size_GB DECIMAL(18,2),
+        Exchange_Total_Primary_Total_Size_Bytes BIGINT,
+        Exchange_Total_Primary_SystemMessage_Count BIGINT,
+        Exchange_Total_Primary_SystemMessage_Size_Bytes BIGINT,
+        Exchange_Total_Primary_Recoverable_Count BIGINT,
+        Exchange_Total_Primary_Recoverable_Size_Bytes BIGINT,
+        Exchange_Total_Archive_Total_Size_Bytes BIGINT,
+        Exchange_Total_Archive_SystemMessage_Count BIGINT,
+        Exchange_Total_Archive_SystemMessage_Size_Bytes BIGINT,
+        Exchange_Total_Archive_Recoverable_Count BIGINT,
+        Exchange_Total_Archive_Recoverable_Size_Bytes BIGINT,
+        OneDrive_Total_File_Count BIGINT,
+        OneDrive_Total_StorageUsedGB DECIMAL(18,2),
+        SharePoint_Total_File_Count BIGINT,
+        SharePoint_Total_StorageUsedGB DECIMAL(18,2),
+        Users_Total INT
+    )
+END;
+
+DECLARE @ExecutionId UNIQUEIDENTIFIER = NEWID();
+
+INSERT INTO [$($Config.Sql.SqlDBTarget)].[dbo].[PowerBIDataModelHistory]
+SELECT 
+    @ExecutionId,
+    GETDATE(),
+    e.department,
+    e.Exchange_Total_Primary_Item_Count,
+    e.Exchange_Total_Archive_Item_Count,
+    e.Exchange_Total_Primary_Total_Size_GB,
+    e.Exchange_Total_Archive_Total_Size_GB,
+    e.Exchange_Total_Primary_Total_Size_Bytes,
+    e.Exchange_Total_Primary_SystemMessage_Count,
+    e.Exchange_Total_Primary_SystemMessage_Size_Bytes,
+    e.Exchange_Total_Primary_Recoverable_Count,
+    e.Exchange_Total_Primary_Recoverable_Size_Bytes,
+    e.Exchange_Total_Archive_Total_Size_Bytes,
+    e.Exchange_Total_Archive_SystemMessage_Count,
+    e.Exchange_Total_Archive_SystemMessage_Size_Bytes,
+    e.Exchange_Total_Archive_Recoverable_Count,
+    e.Exchange_Total_Archive_Recoverable_Size_Bytes,
+    o.OneDrive_Total_File_Count,
+    o.OneDrive_Total_StorageUsedGB,
+    s.SharePoint_Total_File_Count,
+    s.SharePoint_Total_StorageUsedGB,
+    u.Users_Total
+FROM
+(
+    SELECT
+        ISNULL(department,'Unknown') AS department,
+        SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
+        SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
+        CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
+        CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
+        SUM(ISNULL([Primary_Total_Size_Bytes],0)) AS Exchange_Total_Primary_Total_Size_Bytes,
+        SUM(ISNULL([Primary_SystemMessage_Count],0)) AS Exchange_Total_Primary_SystemMessage_Count,
+        SUM(ISNULL([Primary_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Primary_SystemMessage_Size_Bytes,
+        SUM(ISNULL([Primary_Recoverable_Count],0)) AS Exchange_Total_Primary_Recoverable_Count,
+        SUM(ISNULL([Primary_Recoverable_Size_Bytes],0)) AS Exchange_Total_Primary_Recoverable_Size_Bytes,
+        SUM(ISNULL([Archive_Total_Size_Bytes],0)) AS Exchange_Total_Archive_Total_Size_Bytes,
+        SUM(ISNULL([Archive_SystemMessage_Count],0)) AS Exchange_Total_Archive_SystemMessage_Count,
+        SUM(ISNULL([Archive_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Archive_SystemMessage_Size_Bytes,
+        SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
+        SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
+    FROM [$($Config.Sql.SqlDBTarget)].[dbo].[MicrosoftExchange]
+    GROUP BY ISNULL(department,'Unknown')
+) e
+LEFT JOIN
+(
+    SELECT
+        ISNULL(department,'Unknown') AS department,
+        SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
+        SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
+    FROM [$($Config.Sql.SqlDBTarget)].[dbo].[MicrosoftOneDrive]
+    GROUP BY ISNULL(department,'Unknown')
+) o ON e.department = o.department
+LEFT JOIN
+(
+    SELECT
+        ISNULL(department,'Unknown') AS department,
+        SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
+        SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
+    FROM [$($Config.Sql.SqlDBTarget)].[dbo].[MicrosoftSharePoint]
+    GROUP BY ISNULL(department,'Unknown')
+) s ON e.department = s.department
+LEFT JOIN
+(
+    SELECT
+        ISNULL(department,'Unknown') AS department,
+        COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
+    FROM [$($Config.Sql.SqlDBTarget)].[dbo].[MicrosoftUsers]
+    WHERE [UserPrincipalName] IS NOT NULL
+    GROUP BY ISNULL(department,'Unknown')
+) u ON e.department = u.department;
+"@
+    Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $query
+    Write-Log "[$($Config.Sql.SqlDBTarget)].[dbo].[PowerBIDataModelHistory] table created successfully." Green
+}
+
+function CreatePowerBIDataModelCountryOrRegion {
+    $queryCountryOrRegion = "
+        INSERT INTO dbo.PowerBICountryOrRegion (Department, CountryName, CountryCount)
+        SELECT 
+            ISNULL(Department, 'Unknown') AS Department,
+            CountryOrRegion AS CountryName,
+            COUNT(*) AS CountryCount
+        FROM dbo.MicrosoftUsers
+        WHERE CountryOrRegion IS NOT NULL
+        GROUP BY ISNULL(Department, 'Unknown'), CountryOrRegion
+        ORDER BY Department, CountryCount DESC;
+    "
+    Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $queryCountryOrRegion
+    Write-Log "[$($Config.Sql.SqlDBTarget)].[dbo].[PowerBICountryOrRegion] table created successfully." Green
 }
 
 # ENTRAID
@@ -741,252 +840,12 @@ function Invoke-GraphRequest {
     }
 }
 
-# DATAMODEL
-function CreatePowerBIDataModel {
-    $Date = Get-Date -Format "yyyy-MM-dd"
-    $query = "
-    -- ==============================================
-    -- 1st table
-    -- ==============================================
-    IF OBJECT_ID('DataCare.dbo.PowerBIDataModelBackup_$($Date)', 'U') IS NULL
-    BEGIN
-        SELECT *
-        INTO [DataCare].[dbo].[PowerBIDataModelBackup_$($Date)]
-        FROM (
-            SELECT
-                e.department,
-                e.Exchange_Total_Primary_Item_Count,
-                e.Exchange_Total_Archive_Item_Count,
-                e.Exchange_Total_Primary_Total_Size_GB,
-                e.Exchange_Total_Archive_Total_Size_GB,
-                e.Exchange_Total_Primary_Total_Size_Bytes,
-                e.Exchange_Total_Primary_SystemMessage_Count,
-                e.Exchange_Total_Primary_SystemMessage_Size_Bytes,
-                e.Exchange_Total_Primary_Recoverable_Count,
-                e.Exchange_Total_Primary_Recoverable_Size_Bytes,
-                e.Exchange_Total_Archive_Total_Size_Bytes,
-                e.Exchange_Total_Archive_SystemMessage_Count,
-                e.Exchange_Total_Archive_SystemMessage_Size_Bytes,
-                e.Exchange_Total_Archive_Recoverable_Count,
-                e.Exchange_Total_Archive_Recoverable_Size_Bytes,
-                o.OneDrive_Total_File_Count,
-                o.OneDrive_Total_StorageUsedGB,
-                s.SharePoint_Total_File_Count,
-                s.SharePoint_Total_StorageUsedGB,
-                u.Users_Total
-            FROM
-            (
-                SELECT
-                    ISNULL(department,'Unknown') AS department,
-                    SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
-                    SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
-                    CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
-                    CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
-                    SUM(ISNULL([Primary_Total_Size_Bytes],0)) AS Exchange_Total_Primary_Total_Size_Bytes,
-                    SUM(ISNULL([Primary_SystemMessage_Count],0)) AS Exchange_Total_Primary_SystemMessage_Count,
-                    SUM(ISNULL([Primary_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Primary_SystemMessage_Size_Bytes,
-                    SUM(ISNULL([Primary_Recoverable_Count],0)) AS Exchange_Total_Primary_Recoverable_Count,
-                    SUM(ISNULL([Primary_Recoverable_Size_Bytes],0)) AS Exchange_Total_Primary_Recoverable_Size_Bytes,
-                    SUM(ISNULL([Archive_Total_Size_Bytes],0)) AS Exchange_Total_Archive_Total_Size_Bytes,
-                    SUM(ISNULL([Archive_SystemMessage_Count],0)) AS Exchange_Total_Archive_SystemMessage_Count,
-                    SUM(ISNULL([Archive_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Archive_SystemMessage_Size_Bytes,
-                    SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
-                    SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
-                FROM [DataCare].[dbo].[Exchange]
-                GROUP BY ISNULL(department,'Unknown')
-            ) e
-            LEFT JOIN
-            (
-                SELECT
-                    ISNULL(department,'Unknown') AS department,
-                    SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
-                    SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
-                FROM [DataCare].[dbo].[OneDrive]
-                GROUP BY ISNULL(department,'Unknown')
-            ) o ON e.department = o.department
-            LEFT JOIN
-            (
-                SELECT
-                    ISNULL(department,'Unknown') AS department,
-                    SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
-                    SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
-                FROM [DataCare].[dbo].[SharePoint]
-                GROUP BY ISNULL(department,'Unknown')
-            ) s ON e.department = s.department
-            LEFT JOIN
-            (
-                SELECT
-                    ISNULL(department,'Unknown') AS department,
-                    COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
-                FROM [DataCare].[dbo].[Users]
-                WHERE [UserPrincipalName] IS NOT NULL
-                GROUP BY ISNULL(department,'Unknown')
-            ) u ON e.department = u.department
-        ) Data
-    END
-    ELSE
-    BEGIN
-        INSERT INTO [DataCare].[dbo].[PowerBIDataModelBackup_$($Date)]
-        SELECT *
-        FROM (
-            SELECT
-                e.department,
-                e.Exchange_Total_Primary_Item_Count,
-                e.Exchange_Total_Archive_Item_Count,
-                e.Exchange_Total_Primary_Total_Size_GB,
-                e.Exchange_Total_Archive_Total_Size_GB,
-                e.Exchange_Total_Primary_Total_Size_Bytes,
-                e.Exchange_Total_Primary_SystemMessage_Count,
-                e.Exchange_Total_Primary_SystemMessage_Size_Bytes,
-                e.Exchange_Total_Primary_Recoverable_Count,
-                e.Exchange_Total_Primary_Recoverable_Size_Bytes,
-                e.Exchange_Total_Archive_Total_Size_Bytes,
-                e.Exchange_Total_Archive_SystemMessage_Count,
-                e.Exchange_Total_Archive_SystemMessage_Size_Bytes,
-                e.Exchange_Total_Archive_Recoverable_Count,
-                e.Exchange_Total_Archive_Recoverable_Size_Bytes,
-                o.OneDrive_Total_File_Count,
-                o.OneDrive_Total_StorageUsedGB,
-                s.SharePoint_Total_File_Count,
-                s.SharePoint_Total_StorageUsedGB,
-                u.Users_Total
-            FROM
-            (
-                SELECT
-                    ISNULL(department,'Unknown') AS department,
-                    SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
-                    SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
-                    CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
-                    CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
-                    SUM(ISNULL([Primary_Total_Size_Bytes],0)) AS Exchange_Total_Primary_Total_Size_Bytes,
-                    SUM(ISNULL([Primary_SystemMessage_Count],0)) AS Exchange_Total_Primary_SystemMessage_Count,
-                    SUM(ISNULL([Primary_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Primary_SystemMessage_Size_Bytes,
-                    SUM(ISNULL([Primary_Recoverable_Count],0)) AS Exchange_Total_Primary_Recoverable_Count,
-                    SUM(ISNULL([Primary_Recoverable_Size_Bytes],0)) AS Exchange_Total_Primary_Recoverable_Size_Bytes,
-                    SUM(ISNULL([Archive_Total_Size_Bytes],0)) AS Exchange_Total_Archive_Total_Size_Bytes,
-                    SUM(ISNULL([Archive_SystemMessage_Count],0)) AS Exchange_Total_Archive_SystemMessage_Count,
-                    SUM(ISNULL([Archive_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Archive_SystemMessage_Size_Bytes,
-                    SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
-                    SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
-                FROM [DataCare].[dbo].[Exchange]
-                GROUP BY ISNULL(department,'Unknown')
-            ) e
-            LEFT JOIN
-            (
-                SELECT
-                    ISNULL(department,'Unknown') AS department,
-                    SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
-                    SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
-                FROM [DataCare].[dbo].[OneDrive]
-                GROUP BY ISNULL(department,'Unknown')
-            ) o ON e.department = o.department
-            LEFT JOIN
-            (
-                SELECT
-                    ISNULL(department,'Unknown') AS department,
-                    SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
-                    SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
-                FROM [DataCare].[dbo].[SharePoint]
-                GROUP BY ISNULL(department,'Unknown')
-            ) s ON e.department = s.department
-            LEFT JOIN
-            (
-                SELECT
-                    ISNULL(department,'Unknown') AS department,
-                    COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
-                FROM [DataCare].[dbo].[Users]
-                WHERE [UserPrincipalName] IS NOT NULL
-                GROUP BY ISNULL(department,'Unknown')
-            ) u ON e.department = u.department
-        ) Data
-    END
-
-    -- ==============================================
-    -- 2nd table
-    -- ==============================================
-    INSERT INTO [DataCare].[dbo].[PowerBIDataModel]
-    SELECT *
-    FROM (
-        SELECT
-            e.department,
-            e.Exchange_Total_Primary_Item_Count,
-            e.Exchange_Total_Archive_Item_Count,
-            e.Exchange_Total_Primary_Total_Size_GB,
-            e.Exchange_Total_Archive_Total_Size_GB,
-            e.Exchange_Total_Primary_Total_Size_Bytes,
-            e.Exchange_Total_Primary_SystemMessage_Count,
-            e.Exchange_Total_Primary_SystemMessage_Size_Bytes,
-            e.Exchange_Total_Primary_Recoverable_Count,
-            e.Exchange_Total_Primary_Recoverable_Size_Bytes,
-            e.Exchange_Total_Archive_Total_Size_Bytes,
-            e.Exchange_Total_Archive_SystemMessage_Count,
-            e.Exchange_Total_Archive_SystemMessage_Size_Bytes,
-            e.Exchange_Total_Archive_Recoverable_Count,
-            e.Exchange_Total_Archive_Recoverable_Size_Bytes,
-            o.OneDrive_Total_File_Count,
-            o.OneDrive_Total_StorageUsedGB,
-            s.SharePoint_Total_File_Count,
-            s.SharePoint_Total_StorageUsedGB,
-            u.Users_Total
-        FROM
-        (
-            SELECT
-                ISNULL(department,'Unknown') AS department,
-                SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
-                SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
-                CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
-                CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
-                SUM(ISNULL([Primary_Total_Size_Bytes],0)) AS Exchange_Total_Primary_Total_Size_Bytes,
-                SUM(ISNULL([Primary_SystemMessage_Count],0)) AS Exchange_Total_Primary_SystemMessage_Count,
-                SUM(ISNULL([Primary_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Primary_SystemMessage_Size_Bytes,
-                SUM(ISNULL([Primary_Recoverable_Count],0)) AS Exchange_Total_Primary_Recoverable_Count,
-                SUM(ISNULL([Primary_Recoverable_Size_Bytes],0)) AS Exchange_Total_Primary_Recoverable_Size_Bytes,
-                SUM(ISNULL([Archive_Total_Size_Bytes],0)) AS Exchange_Total_Archive_Total_Size_Bytes,
-                SUM(ISNULL([Archive_SystemMessage_Count],0)) AS Exchange_Total_Archive_SystemMessage_Count,
-                SUM(ISNULL([Archive_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Archive_SystemMessage_Size_Bytes,
-                SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
-                SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
-            FROM [DataCare].[dbo].[Exchange]
-            GROUP BY ISNULL(department,'Unknown')
-        ) e
-        LEFT JOIN
-        (
-            SELECT
-                ISNULL(department,'Unknown') AS department,
-                SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
-                SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
-            FROM [DataCare].[dbo].[OneDrive]
-            GROUP BY ISNULL(department,'Unknown')
-        ) o ON e.department = o.department
-        LEFT JOIN
-        (
-            SELECT
-                ISNULL(department,'Unknown') AS department,
-                SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
-                SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
-            FROM [DataCare].[dbo].[SharePoint]
-            GROUP BY ISNULL(department,'Unknown')
-        ) s ON e.department = s.department
-        LEFT JOIN
-        (
-            SELECT
-                ISNULL(department,'Unknown') AS department,
-                COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
-            FROM [DataCare].[dbo].[Users]
-            WHERE [UserPrincipalName] IS NOT NULL
-            GROUP BY ISNULL(department,'Unknown')
-        ) u ON e.department = u.department
-    ) Data;
-    "
-    Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $query
-}
-
 
 # ======================
 #           MAIN
 # ======================
 try {
-    Write-Log "=== START DATACARE EXE ==="
+    Write-Log "=== START DATACARE ETL ==="
     
     $ExecutionId = [guid]::NewGuid()
 
@@ -1005,20 +864,19 @@ try {
     $TotalRowsRetrieved = 0
     $TotalRowsInserted  = 0
 
-    $ReportTables = @{
-        Exchange   = $Config.Sql.CreateTable_Exchange
-        OneDrive   = $Config.Sql.CreateTable_OneDrive
-        SharePoint = $Config.Sql.CreateTable_SharePoint
-        Users      = $Config.Sql.CreateTable_Users
-        PowerBIDataModel  = $Config.Sql.CreateTable_PowerBIDataModel
-        CountryOrRegion = $Config.Sql.CreateTable_CountryOrRegion
+    $Tables = @{
+        MicrosoftExchange   = $Config.Sql.CreateTable_Exchange
+        MicrosoftOneDrive   = $Config.Sql.CreateTable_OneDrive
+        MicrosoftSharePoint = $Config.Sql.CreateTable_SharePoint
+        MicrosoftUsers      = $Config.Sql.CreateTable_Users
+        PowerBICountryOrRegion = $Config.Sql.CreateTable_PowerBICountryOrRegion
     }
-    foreach ($report in $ReportTables.GetEnumerator()) {
-        $reportName = $report.Key
-        $createQuery = $report.Value
-        $tableName = "dbo.$reportName"
+    foreach ($table in $Tables.GetEnumerator()) {
+        $tableKey = $table.Key
+        $createQuery = $table.Value
+        $tableName = "dbo.$tableKey"
 
-        $count = Get-ReportCountFromDb -ReportName $reportName
+        $count = Get-ReportCountFromDb -Table $tableKey
         if ($count -gt 0) {
             Write-Log "Number of records in $tableName : $count. Dropping and recreating $tableName table..." Yellow
             $dropQuery = "IF OBJECT_ID('$tableName','U') IS NOT NULL DROP TABLE $tableName;"
@@ -1047,11 +905,10 @@ try {
 
     #STEP 1: exchange, onedrive and sharepoint
     $Reports = @{
-        Exchange   = "https://graph.microsoft.com/v1.0/reports/getMailboxUsageDetail(period='$($Config.Execution.Period)')"
-        OneDrive   = "https://graph.microsoft.com/v1.0/reports/getOneDriveUsageAccountDetail(period='$($Config.Execution.Period)')"
-        SharePoint = "https://graph.microsoft.com/v1.0/reports/getSharePointSiteUsageDetail(period='$($Config.Execution.Period)')"
+        MicrosoftExchange   = "https://graph.microsoft.com/v1.0/reports/getMailboxUsageDetail(period='$($Config.Execution.Period)')"
+        MicrosoftOneDrive   = "https://graph.microsoft.com/v1.0/reports/getOneDriveUsageAccountDetail(period='$($Config.Execution.Period)')"
+        MicrosoftSharePoint = "https://graph.microsoft.com/v1.0/reports/getSharePointSiteUsageDetail(period='$($Config.Execution.Period)')"
     }
-
     foreach ($ReportName in $Reports.Keys) {
         Write-Log "
         ***************************************
@@ -1064,9 +921,10 @@ try {
                 if ($Data -and $Data.Count -gt 0) {
                     $RowsRetrievedExchange = 0
                     $RowsRetrievedOneDrive = 0
+                    $RowsRetrievedSharePoint = 0
                     $RowsInserted  = 0
 
-                    if ($ReportName -eq "Exchange") {
+                    if ($ReportName -eq "MicrosoftExchange") {
                         $attempt = 0
                         foreach ($Row in $Data) {
                             $ReportRefreshDate = ($Row.PSObject.Properties |
@@ -1117,7 +975,7 @@ try {
                                             }
                                         }
                                         Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
-                                        Write-ToSqlTable -TableName "Exchange" -Data @($exchangeObject)
+                                        Write-ToSqlTable -TableName $ReportName -Data @($exchangeObject)
                                         $RowsInserted++
                                         $condition = $false
                                     }
@@ -1169,7 +1027,7 @@ try {
                             -RowsInserted $RowsInserted `
                             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
                     }
-                    elseif ($ReportName -eq "OneDrive") {
+                    elseif ($ReportName -eq "MicrosoftOneDrive") {
                         foreach ($Row in $Data) {
                             $ReportRefreshDate = ($Row.PSObject.Properties |
                                 Where-Object { $_.Name -like "*Report Refresh Date*" }).Name
@@ -1257,7 +1115,7 @@ try {
                                             Active_File_Count        = $Row.'Active File Count'
                                             Storage_Used__Byte_      = $Row.'Storage Used (Byte)'
                                             Storage_Allocated__Byte_ = $Row.'Storage Allocated (Byte)'
-                                            Owner_Principal_Name     = $Row.'Owner Principal Name'
+                                            Owner_Principal_Name     = $UserPrincipalName
                                             Report_Period            = $Row.'Report Period'
                                             Page_View_Count          = $Row.'Page View Count'
                                             Visited_Page_Count       = $Row.'Visited Page Count'
@@ -1290,7 +1148,7 @@ try {
                                     Active_File_Count        = $Row.'Active File Count'
                                     Storage_Used__Byte_      = $Row.'Storage Used (Byte)'
                                     Storage_Allocated__Byte_ = $Row.'Storage Allocated (Byte)'
-                                    Owner_Principal_Name     = $Row.'Owner Principal Name'
+                                    Owner_Principal_Name     = $UserPrincipalName
                                     Report_Period            = $Row.'Report Period'
                                     Page_View_Count          = $Row.'Page View Count'
                                     Visited_Page_Count       = $Row.'Visited Page Count'
@@ -1347,9 +1205,8 @@ try {
     ***************************************
     STEP 2 - CASE: Users
     *************************************** " -ForegroundColor Magenta
-
     $AllUsers = @()
-    $UsersTable = "Users"
+    $UsersTable = "MicrosoftUsers"
     $Url = "https://graph.microsoft.com/v1.0/users?`$select=id,displayName,userPrincipalName,mail,department,jobTitle,accountEnabled,createdDateTime,country"
     do {
         $Response = Invoke-GraphRequest -Url $Url -Headers $UserHeaders
@@ -1417,46 +1274,12 @@ try {
     ***************************************
     STEP 3 - Creating final metrics for PowerBI
     ***************************************" -ForegroundColor Magenta
-
-    Write-Log "Creating tables details ..." -ForegroundColor Cyan
-
-    CreatePowerBIDataModel
-
-    $queryCountryOrRegion = "
-        INSERT INTO dbo.CountryOrRegion (Department, CountryName, CountryCount)
-        SELECT 
-            ISNULL(Department, 'Unknown') AS Department,
-            CountryOrRegion AS CountryName,
-            COUNT(*) AS CountryCount
-        FROM dbo.Users
-        WHERE CountryOrRegion IS NOT NULL
-        GROUP BY ISNULL(Department, 'Unknown'), CountryOrRegion
-        ORDER BY Department, CountryCount DESC;
-    "
-    Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $queryCountryOrRegion
-
-    $Date = Get-Date -Format "yyyy-MM-dd"
-    $checkTablesQuery = "
-    SELECT 
-        CASE 
-            WHEN OBJECT_ID('DataCare.dbo.PowerBIDataModelBackup_$($Date)', 'U') IS NOT NULL
-            AND OBJECT_ID('DataCare.dbo.PowerBIDataModel', 'U') IS NOT NULL
-            AND OBJECT_ID('DataCare.dbo.CountryOrRegion', 'U') IS NOT NULL
-            THEN 1
-            ELSE 0
-        END AS TablesExist
-    "
-    $result = Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $checkTablesQuery
-    if ($result.TablesExist -eq 1) {
-        Write-Log "[DataCare].[dbo].[PowerBIDataModel] table created successfully." Green
-        Write-Log "[DataCare].[dbo].[PowerBIDataModelBackup_$($Date)] table created successfully." Green
-        Write-Log "[DataCare].[dbo].[CountryOrRegion] table created successfully." Green
-    }
-    else {
-        Write-Log "ERROR: One or both tables were not created correctly." Red
-    }
+    Write-Log "Creating tables for PowerBI ..." -ForegroundColor Cyan
+    CreatePowerBIDataModelHistory
+    CreatePowerBIDataModelCountryOrRegion
+    Write-Log "Tables created successfully" -ForegroundColor Green
     
-    Write-Log "=== END DATACARE EXE ===" -ForegroundColor Green
+    Write-Log "=== END DATACARE ETL ===" -ForegroundColor Green
 }
 catch {
     Write-Log "SCRIPT FAILED: $($_.Exception.Message)" -ForegroundColor Red
