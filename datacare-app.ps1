@@ -45,17 +45,12 @@
     - Azure AD:
         $TenantId
         $ClientId
-        $ClientSecret
+        $CertificateThumbprint
 
 .EXECUTION
     1. Open PowerShell with admin privileges
     2. Navigate to the script folder
-    3. Set SecretManagement and SecretStore properties:
-        3.1 Register-SecretVault `
-                -Name LocalVault `
-                -ModuleName Microsoft.PowerShell.SecretStore `
-                -DefaultVault
-        3.2 Set-Secret -Name GraphClientSecret -Secret "my-secret"   
+    3. Set cerficated properties (only on fist launch) 
     4. Run the command: .\datacare-app.ps1
     5. Enter the required credentials
 
@@ -75,6 +70,7 @@
 $Config = @{
     TenantId     = "76ff1baa-3307-46aa-a752-cc3736d8a2b2" #your_tenantId
     ClientId     = "dd80738f-6094-43ff-bf26-03fe4e3bc7da" #your_clientId
+    CertificateThumbprint = "4EDBFF09D6B70180A0DC56D8647F6FD44AC99C81"
     Sql = @{
         Server      = "localhost\SQLEXPRESS"
         SqlDBMaster = "master"
@@ -800,32 +796,107 @@ function CreatePowerBIDataModelCountryOrRegion {
 
 # ENTRAID
 function Get-GraphAccessToken {
-    Write-Log "Requesting Microsoft Graph token..." Cyan
+    Write-Log "Requesting Microsoft Graph token using certificate..." Cyan
 
-    $body = @{
-        client_id     = $Config.ClientId
-        client_secret = $Config.ClientSecret
-        scope         = "https://graph.microsoft.com/.default"
-        grant_type    = "client_credentials"
-    }
-
-    $uri = "https://login.microsoftonline.com/$($Config.TenantId)/oauth2/v2.0/token"
     try {
+        $cert = Get-Item "Cert:\CurrentUser\My\$($Config.CertificateThumbprint)"
+        if (-not $cert) {
+            throw "Certificate not found with thumbprint $($Config.CertificateThumbprint)"
+        }
+        if (-not $cert.HasPrivateKey) {
+            throw "Certificate does not have a private key"
+        }
+
+        $now = [System.DateTimeOffset]::UtcNow
+        $exp = $now.AddMinutes(10)
+
+        $header = @{
+            alg = "RS256"
+            typ = "JWT"
+            x5t = [Convert]::ToBase64String($cert.GetCertHash()).TrimEnd('=').Replace('+','-').Replace('/','_')
+        }
+
+        $payload = @{
+            aud = "https://login.microsoftonline.com/$($Config.TenantId)/oauth2/v2.0/token"
+            iss = $Config.ClientId
+            sub = $Config.ClientId
+            jti = [guid]::NewGuid().ToString()
+            nbf = [int]$now.ToUnixTimeSeconds()
+            exp = [int]$exp.ToUnixTimeSeconds()
+        }
+
+        function ConvertTo-Base64Url($bytes) {
+            return [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+','-').Replace('/','_')
+        }
+
+        $headerEncoded  = ConvertTo-Base64Url([Text.Encoding]::UTF8.GetBytes(($header | ConvertTo-Json -Compress)))
+        $payloadEncoded = ConvertTo-Base64Url([Text.Encoding]::UTF8.GetBytes(($payload | ConvertTo-Json -Compress)))
+
+        $unsignedToken = "$headerEncoded.$payloadEncoded"
+        $bytesToSign = [Text.Encoding]::UTF8.GetBytes($unsignedToken)
+
+        $signatureBytes = $null
+
+        try {
+            $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
+            if ($rsa) {
+                $signatureBytes = $rsa.SignData(
+                    $bytesToSign,
+                    [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+                    [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
+                )
+            }
+        }
+        catch {
+            Write-Log "Modern RSA method failed, fallback to legacy CSP..." Yellow
+        }
+
+        if (-not $signatureBytes) {
+            $privateKey = $cert.PrivateKey
+            if (-not $privateKey) {
+                throw "No usable private key found"
+            }
+            if ($privateKey -is [System.Security.Cryptography.RSACryptoServiceProvider]) {
+                $sha256 = New-Object System.Security.Cryptography.SHA256Managed
+                $signatureBytes = $privateKey.SignData($bytesToSign, $sha256)
+            }
+            else {
+                throw "Unsupported private key provider: $($privateKey.GetType().FullName)"
+            }
+        }
+
+        if (-not $signatureBytes) {
+            throw "Failed to sign JWT"
+        }
+
+        $signatureEncoded = ConvertTo-Base64Url($signatureBytes)
+        $clientAssertion = "$unsignedToken.$signatureEncoded"
+
+        $body = @{
+            client_id             = $Config.ClientId
+            scope                 = "https://graph.microsoft.com/.default"
+            grant_type            = "client_credentials"
+            client_assertion_type = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+            client_assertion      = $clientAssertion
+        }
+
+        $uri = "https://login.microsoftonline.com/$($Config.TenantId)/oauth2/v2.0/token"
+
         $response = Invoke-RestMethod `
             -Uri $uri `
             -Method POST `
             -Body $body `
             -ContentType "application/x-www-form-urlencoded"
 
-        Write-Log "Graph token acquired" Green
+        Write-Log "Graph token acquired (certificate auth)" Green
         return $response.access_token
     }
     catch {
-        throw "Graph authentication failed: $($_.Exception.Message)"
+        throw "Graph authentication (certificate) failed: $($_.Exception.Message)"
     }
 }
 
-function Invoke-GraphRequest {
+function Invoke-CustomGraphRequest {
     param (
         [string]$Url,
         [hashtable]$Headers
@@ -888,7 +959,6 @@ try {
         }
     }
 
-    $Config.ClientSecret = Get-Secret GraphClientSecret -AsPlainText
     $AccessToken = Get-GraphAccessToken
     $ReportHeaders = @{
         Authorization = "Bearer $AccessToken"
@@ -915,7 +985,7 @@ try {
         STEP 1 - CASE: $ReportName
         ***************************************" -ForegroundColor Magenta
         try {
-            $Response = Invoke-GraphRequest -Url $Reports[$ReportName] -Headers $ReportHeaders
+            $Response = Invoke-CustomGraphRequest -Url $Reports[$ReportName] -Headers $ReportHeaders
             if ($Response) {
                 $Data = $Response | ConvertFrom-Csv
                 if ($Data -and $Data.Count -gt 0) {
@@ -940,7 +1010,7 @@ try {
                             $Url = "https://graph.microsoft.com/v1.0/users/"+$EncodedUpn+"?`$select=department"
 
                             try {
-                                $Response = Invoke-GraphRequest -Url $Url -Headers $UserHeaders
+                                $Response = Invoke-CustomGraphRequest -Url $Url -Headers $UserHeaders
                                 $UserDepartment = $Response.department
 
                                 $condition = $true
@@ -1041,7 +1111,7 @@ try {
                             $Url = "https://graph.microsoft.com/v1.0/users/"+$EncodedUpn+"?`$select=department"
 
                             try {
-                                $Response = Invoke-GraphRequest -Url $Url -Headers $UserHeaders
+                                $Response = Invoke-CustomGraphRequest -Url $Url -Headers $UserHeaders
                                 $UserDepartment = $Response.department
 
                                 $oneDriveObject = [PSCustomObject]@{
@@ -1100,7 +1170,7 @@ try {
                                 $EncodedUpn = [System.Uri]::EscapeDataString($UserPrincipalName)
                                 $Url = "https://graph.microsoft.com/v1.0/users/"+$EncodedUpn+"?`$select=department"
                                 try {
-                                    $Response = Invoke-GraphRequest -Url $Url -Headers $UserHeaders
+                                    $Response = Invoke-CustomGraphRequest -Url $Url -Headers $UserHeaders
                                     $UserDepartment = $Response.department
 
                                     $sharePointObject = [PSCustomObject]@{
@@ -1209,7 +1279,7 @@ try {
     $UsersTable = "MicrosoftUsers"
     $Url = "https://graph.microsoft.com/v1.0/users?`$select=id,displayName,userPrincipalName,mail,department,jobTitle,accountEnabled,createdDateTime,country"
     do {
-        $Response = Invoke-GraphRequest -Url $Url -Headers $UserHeaders
+        $Response = Invoke-CustomGraphRequest -Url $Url -Headers $UserHeaders
         if ($Response -and $Response.value) {
             $AllUsers += $Response.value
             $Url = $Response.'@odata.nextLink'
