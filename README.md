@@ -314,7 +314,6 @@ jobs:
 ## 📄 License
 
 © 2026 - Andrea Magnaghi
-Internal use only
 
 ---
 
