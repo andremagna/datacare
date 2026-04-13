@@ -1,7 +1,7 @@
-# 🚀 Microsoft 365 DataCare – Enterprise Data Collector
+# Microsoft 365 DataCare – Enterprise Data Collector
 
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue)
-![SQL Server](https://img.shields.io/badge/SQL%20Server-Express%20%7C%20Standard-red)
+![SQL Server](https://img.shields.io/badge/SQL%20Server-Express-red)
 ![Microsoft Graph](https://img.shields.io/badge/API-Microsoft%20Graph-green)
 ![SonarCloud](https://img.shields.io/badge/Code%20Quality-SonarCloud-brightgreen)
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen)
