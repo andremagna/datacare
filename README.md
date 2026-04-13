@@ -25,11 +25,11 @@
 ```text
 Microsoft Graph + Exchange Online
             ↓
-     PowerShell ETL Script
+  PowerShell ETL Script
             ↓
-     SQL Server (DataCare)
+      SQL Server DB
             ↓
-        Power BI / Analytics
+        Power BI
 ```
 
 ---
@@ -46,21 +46,23 @@ m365-datacare/
 │   ├── datacare-app.ps1
 │   └── config.template.ps1
 │
-├── sql/
-│   ├── schema.sql
-│   ├── views.sql
-│   └── procedures.sql
+├── sql /
+│   ├── dbo.executionlog
+│   ├── dbo.microsoftexchange
+│   ├── dbo.microsoftonedrive
+│   ├── dbo.microsoftsharepoint
+│   ├── dbo.microsoftusers
+│   ├── dbo.powerbicountryorregion
+│   └── dbo.powerbidatamodelhistory
 │
 ├── powerbi/
-│   ├── model-description.md
-│   └── measures.dax
+│   ├── powerbicalendar
+│   ├── powerbicountryorregion
+│   └── powerbidatamodelhistory
 │
 ├── certificates/
-│   └── README.md
-│
-├── docs/
-│   ├── architecture.md
-│   ├── runbook.md
+│   ├── graphcert.cer
+│   └── graphcert.pfx
 │
 └── .github/
     └── workflows/
