@@ -23,9 +23,9 @@
 ## 🏗️ Architecture
 
 ```text
-Microsoft Graph + Exchange Online
+ PowerShell ETL Script
             ↓
-  PowerShell ETL Script
+Microsoft Graph + Exchange Online 
             ↓
       SQL Server DB
             ↓
@@ -37,16 +37,15 @@ Microsoft Graph + Exchange Online
 ## 📁 Repository Structure
 
 ```text
-m365-datacare/
+datacare/
 │
 ├── README.md
-├── .gitignore
+├── .gitattributes
 │
 ├── app/
-│   ├── datacare-app.ps1
-│   └── config.template.ps1
-│
-├── sql /
+│   └── datacare-app.ps1
+│   
+├── sql/
 │   ├── dbo.executionlog
 │   ├── dbo.microsoftexchange
 │   ├── dbo.microsoftonedrive
@@ -88,7 +87,7 @@ m365-datacare/
 ### SharePoint
 
 * Site usage
-* Page views
+* File counts
 
 ### Azure AD
 
@@ -130,7 +129,7 @@ DataCare
 File:
 
 ```
-app/config.template.ps1
+app/datacare-app.ps1
 ```
 
 ```powershell
@@ -198,7 +197,7 @@ cd app
 
 ## 📜 Logging
 
-* File → `datacare.log`
+* File → `datacare-log.log`
 * SQL → `dbo.ExecutionLog`
 
 ---
