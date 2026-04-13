@@ -118,7 +118,7 @@ DataCare
 
 ---
 
-### 📊 BI Tables
+### 📊 PowerBI Tables
 
 * **PowerBIDataModelHistory**
 * **PowerBICountryOrRegion**
