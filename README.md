@@ -313,7 +313,7 @@ jobs:
 
 ## 📄 License
 
-© 2026 Business Integration Partners
+© 2026 - Andrea Magnaghi
 Internal use only
 
 ---
