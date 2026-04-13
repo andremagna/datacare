@@ -7,14 +7,14 @@
     and retrieves usage, activity details and custom fields.
 
     Retrieved data includes:
-        - Exchange mailbox usage
+        - Exchange mailbox usage:
         https://learn.microsoft.com/en-us/graph/api/reportroot-getmailboxusagedetail?view=graph-rest-1.0&tabs=http
         https://learn.microsoft.com/en-us/powershell/module/exchangepowershell/get-exomailboxstatistics?view=exchange-ps
-        - OneDrive usage
+        - OneDrive usage:
         https://learn.microsoft.com/en-us/graph/api/reportroot-getonedriveusageaccountdetail?view=graph-rest-1.0&tabs=http
-        - SharePoint site usage
+        - SharePoint site usage:
         https://learn.microsoft.com/en-us/graph/api/reportroot-getsharepointsiteusagedetail?view=graph-rest-1.0&tabs=http
-        - Azure AD users usage
+        - Azure AD users usage:
         https://learn.microsoft.com/en-us/graph/api/user-get?view=graph-rest-1.0&tabs=http
 
     All data is:
@@ -46,6 +46,29 @@
         $TenantId
         $ClientId
         $CertificateThumbprint
+            # STEPS:
+            $path = "insertValue"
+
+            $cert = New-SelfSignedCertificate `
+                -Subject "CN=GraphAppCert" `
+                -CertStoreLocation "Cert:\CurrentUser\My" `
+                -KeySpec Signature `
+                -KeyLength 2048 `
+                -KeyExportPolicy Exportable `
+                -KeyAlgorithm RSA `
+                -HashAlgorithm SHA256 `
+                -NotAfter (Get-Date).AddYears(1)
+
+            Export-Certificate `
+                -Cert $cert `
+                -FilePath "$path\GraphAppCert.cer"
+
+            $pwd = ConvertTo-SecureString -String "insertValue" -Force -AsPlainText
+
+            Export-PfxCertificate `
+                -Cert $cert `
+                -FilePath "$path\GraphAppCert.pfx" `
+                -Password $pwd
 
 .EXECUTION
     1. Open PowerShell with admin privileges
@@ -70,7 +93,7 @@
 $Config = @{
     TenantId     = "76ff1baa-3307-46aa-a752-cc3736d8a2b2" #your_tenantId
     ClientId     = "dd80738f-6094-43ff-bf26-03fe4e3bc7da" #your_clientId
-    CertificateThumbprint = "4EDBFF09D6B70180A0DC56D8647F6FD44AC99C81"
+    CertificateThumbprint = "4EDBFF09D6B70180A0DC56D8647F6FD44AC99C81" #your_certificateThumbprint
     Sql = @{
         Server      = "localhost\SQLEXPRESS"
         SqlDBMaster = "master"
@@ -922,8 +945,6 @@ try {
 
     Import-RequiredModule -ModuleName "SqlServer"
     Import-RequiredModule -ModuleName "ExchangeOnlineManagement"
-    Import-RequiredModule -ModuleName "Microsoft.PowerShell.SecretManagement"
-    Import-RequiredModule -ModuleName "Microsoft.PowerShell.SecretStore"
 
     if (-not (Test-SqlConnection)) {
         Write-Log "SQL connection failed." -ForegroundColor Red
