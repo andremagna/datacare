@@ -1,4 +1,4 @@
-# Microsoft 365 DataCare – Enterprise Data Collector
+# DataCare – PowerBI Connector (PowerShell ETL)
 
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue)
 ![SQL Server](https://img.shields.io/badge/SQL%20Server-Express-red)
