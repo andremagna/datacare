@@ -46,29 +46,6 @@
         $TenantId
         $ClientId
         $CertificateThumbprint
-            # STEPS:
-            $path = "insertValue"
-
-            $cert = New-SelfSignedCertificate `
-                -Subject "CN=GraphAppCert" `
-                -CertStoreLocation "Cert:\CurrentUser\My" `
-                -KeySpec Signature `
-                -KeyLength 2048 `
-                -KeyExportPolicy Exportable `
-                -KeyAlgorithm RSA `
-                -HashAlgorithm SHA256 `
-                -NotAfter (Get-Date).AddYears(1)
-
-            Export-Certificate `
-                -Cert $cert `
-                -FilePath "$path\GraphAppCert.cer"
-
-            $pwd = ConvertTo-SecureString -String "insertValue" -Force -AsPlainText
-
-            Export-PfxCertificate `
-                -Cert $cert `
-                -FilePath "$path\GraphAppCert.pfx" `
-                -Password $pwd
 
 .EXECUTION
     1. Open PowerShell with admin privileges
@@ -91,9 +68,12 @@
 #     CONFIGURATIONS
 # ======================
 $Config = @{
-    TenantId     = "76ff1baa-3307-46aa-a752-cc3736d8a2b2" #your_tenantId
-    ClientId     = "dd80738f-6094-43ff-bf26-03fe4e3bc7da" #your_clientId
-    CertificateThumbprint = "4EDBFF09D6B70180A0DC56D8647F6FD44AC99C81" #your_certificateThumbprint
+    TenantId     = "76ff1baa-3307-46aa-a752-cc3736d8a2b2"
+    ClientId     = "dd80738f-6094-43ff-bf26-03fe4e3bc7da"
+    CertificateThumbprint = "4EDBFF09D6B70180A0DC56D8647F6FD44AC99C81"
+    BathSettings = @{
+        BatchSize  = 200
+    }
     Sql = @{
         Server      = "localhost\SQLEXPRESS"
         SqlDBMaster = "master"
@@ -229,8 +209,12 @@ $Config = @{
             CountryCount INT
         );"
     }
-    Execution = @{
+    GraphExecution = @{
         Period     = "D180"
+        GraphToken = $null
+        GraphTokenCreatedAt = $null
+        GraphTokenLifetimeMinutes = 55
+        GraphTokenSkewMinutes = 5
     }
 }
 $masterConnectionString = "Server=$($Config.Sql.Server);Database=$($Config.Sql.SqlDBMaster);Trusted_Connection=True;TrustServerCertificate=True;"
@@ -248,7 +232,7 @@ function Write-Log {
 
     $dateTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $line = "$dateTime - $Message"
-    [System.IO.File]::AppendAllText("$PSScriptRoot\datacare.log", "$line`r`n")
+    [System.IO.File]::AppendAllText("$PSScriptRoot\datacare-log.log", "$line`r`n")
     Write-Host $line -ForegroundColor $ForegroundColor
 }
 
@@ -919,6 +903,44 @@ function Get-GraphAccessToken {
     }
 }
 
+function Get-ValidGraphToken {
+    $now = Get-Date
+
+    if ($Config.GraphExecution.GraphToken -and $Config.GraphExecution.GraphTokenCreatedAt) {
+        $elapsed = ($now - $Config.GraphExecution.GraphTokenCreatedAt).TotalMinutes
+        $remaining = $Config.GraphExecution.GraphTokenLifetimeMinutes - $elapsed
+        if ($remaining -gt $Config.GraphExecution.GraphTokenSkewMinutes) {
+
+            Write-Log "Using cached Graph token (age: $([int]$elapsed) min, remaining: $([int]$remaining) min)" -ForegroundColor DarkGray
+            return $Config.GraphExecution.GraphToken
+        }
+        Write-Log "Graph token near expiry (remaining: $([int]$remaining) min) → refreshing..." -ForegroundColor Yellow
+    }
+    else {
+        Write-Log "No cached token → requesting new one..." -ForegroundColor Yellow
+    }
+
+    $Config.GraphExecution.GraphToken = $null
+    $Config.GraphExecution.GraphTokenCreatedAt = $null
+
+    try {
+        $token = Get-GraphAccessToken
+        if ([string]::IsNullOrEmpty($token)) {
+            throw "Empty token returned from Get-GraphAccessToken"
+        }
+
+        $Config.GraphExecution.GraphToken = $token
+        $Config.GraphExecution.GraphTokenCreatedAt = Get-Date
+
+        Write-Log "Graph token refreshed successfully" -ForegroundColor Green
+        return $Config.GraphExecution.GraphToken
+    }
+    catch {
+        Write-Log "FAILED to acquire Graph token: $($_.Exception.Message)" -ForegroundColor Red
+        throw
+    }
+}
+
 function Invoke-CustomGraphRequest {
     param (
         [string]$Url,
@@ -929,6 +951,17 @@ function Invoke-CustomGraphRequest {
 
     try { return Invoke-RestMethod -Uri $Url -Headers $Headers -Method GET }
     catch {
+        $statusCode = $_.Exception.Response.StatusCode.value__
+
+        if ($statusCode -eq 401) {
+            Write-Log "401 detected → refreshing Graph token..." -ForegroundColor Yellow
+
+            $newToken = Get-ValidGraphToken
+            $Headers["Authorization"] = "Bearer $newToken"
+
+            return Invoke-RestMethod -Uri $Url -Headers $Headers -Method GET
+        }
+
         Write-Log "Request failed: $($_.Exception.Message)" -ForegroundColor Red
         return $null
     }
@@ -980,7 +1013,7 @@ try {
         }
     }
 
-    $AccessToken = Get-GraphAccessToken
+    $AccessToken = Get-ValidGraphToken
     $ReportHeaders = @{
         Authorization = "Bearer $AccessToken"
         Accept        = "text/csv"
@@ -996,9 +1029,9 @@ try {
 
     #STEP 1: exchange, onedrive and sharepoint
     $Reports = @{
-        MicrosoftExchange   = "https://graph.microsoft.com/v1.0/reports/getMailboxUsageDetail(period='$($Config.Execution.Period)')"
-        MicrosoftOneDrive   = "https://graph.microsoft.com/v1.0/reports/getOneDriveUsageAccountDetail(period='$($Config.Execution.Period)')"
-        MicrosoftSharePoint = "https://graph.microsoft.com/v1.0/reports/getSharePointSiteUsageDetail(period='$($Config.Execution.Period)')"
+        MicrosoftExchange   = "https://graph.microsoft.com/v1.0/reports/getMailboxUsageDetail(period='$($Config.GraphExecution.Period)')"
+        MicrosoftOneDrive   = "https://graph.microsoft.com/v1.0/reports/getOneDriveUsageAccountDetail(period='$($Config.GraphExecution.Period)')"
+        MicrosoftSharePoint = "https://graph.microsoft.com/v1.0/reports/getSharePointSiteUsageDetail(period='$($Config.GraphExecution.Period)')"
     }
     foreach ($ReportName in $Reports.Keys) {
         Write-Log "
@@ -1017,6 +1050,8 @@ try {
 
                     if ($ReportName -eq "MicrosoftExchange") {
                         $attempt = 0
+                        $batch = @()
+
                         foreach ($Row in $Data) {
                             $ReportRefreshDate = ($Row.PSObject.Properties |
                                 Where-Object { $_.Name -like "*Report Refresh Date*" }).Name
@@ -1027,6 +1062,7 @@ try {
                                 Write-Log "UPN is empty" -ForegroundColor Yellow
                                 continue
                             }
+
                             $EncodedUpn = [System.Uri]::EscapeDataString($UserPrincipalName)
                             $Url = "https://graph.microsoft.com/v1.0/users/"+$EncodedUpn+"?`$select=department"
 
@@ -1060,14 +1096,22 @@ try {
                                             Has_Archive                 = $Row.'Has Archive'
                                             Report_Period               = $Row.'Report Period'
                                         }
+
                                         if ($deepStats) {
                                             foreach ($key in $deepStats.Keys) {
                                                 $exchangeObject | Add-Member -NotePropertyName $key -NotePropertyValue $deepStats[$key] -Force
                                             }
                                         }
-                                        Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
-                                        Write-ToSqlTable -TableName $ReportName -Data @($exchangeObject)
+
+                                        $batch += $exchangeObject
                                         $RowsInserted++
+
+                                        if ($batch.Count -ge $Config.BathSettings.BatchSize) {
+                                            Write-Log "Writing batch of $($batch.Count) records into SQLServer ..." -ForegroundColor Cyan
+                                            Write-ToSqlTable -TableName $ReportName -Data $batch
+                                            $batch = @()
+                                        }
+
                                         $condition = $false
                                     }
                                     catch {
@@ -1079,6 +1123,7 @@ try {
                                             $statusCode = $_.Exception.Response.StatusCode.value__
                                             $retryHeader = $_.Exception.Response.Headers["Retry-After"]
                                         }
+
                                         switch ($statusCode) {
                                             429 {
                                                 if ($retryHeader -match '^\d+$') {
@@ -1091,7 +1136,6 @@ try {
                                             }
                                             {$_ -in @(500, 503)} {
                                                 $retry = 5 * $attempt
-
                                                 Write-Log "Server error $statusCode for $UserPrincipalName → retry in $retry sec (attempt $attempt)" -ForegroundColor Yellow
                                                 Start-Sleep -Seconds $retry
                                             }
@@ -1103,11 +1147,18 @@ try {
                                         }
                                     }
                                 }
-                            } 
+                            }
                             catch {
                                 Write-Log "Error while recovering department for $UserPrincipalName : $_" -ForegroundColor Yellow
                             }
                         }
+
+                        if ($batch.Count -gt 0) {
+                            Write-Log "Writing final batch of $($batch.Count) records into SQLServer ..." -ForegroundColor Cyan
+                            Write-ToSqlTable -TableName $ReportName -Data $batch
+                            $condition = $false
+                        }
+
                         $RowsRetrievedExchange = $Data.Count
 
                         Write-ExecutionLog `
@@ -1119,6 +1170,8 @@ try {
                             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
                     }
                     elseif ($ReportName -eq "MicrosoftOneDrive") {
+                        $batch = @()
+
                         foreach ($Row in $Data) {
                             $ReportRefreshDate = ($Row.PSObject.Properties |
                                 Where-Object { $_.Name -like "*Report Refresh Date*" }).Name
@@ -1128,6 +1181,7 @@ try {
                             if ([string]::IsNullOrEmpty($UserPrincipalName)) {
                                 Write-Log "UPN is empty" -ForegroundColor Yellow
                             }
+
                             $EncodedUpn = [System.Uri]::EscapeDataString($UserPrincipalName)
                             $Url = "https://graph.microsoft.com/v1.0/users/"+$EncodedUpn+"?`$select=department"
 
@@ -1154,18 +1208,29 @@ try {
                                     ReportDate               = $RefreshDate
                                     InsertedAt               = (Get-Date)
                                     SourceReport             = $ReportName    
-                                    }
+                                }
+                                $batch += $oneDriveObject
 
-                                Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
-                                Write-ToSqlTable -TableName $ReportName -Data @($oneDriveObject) 
-                                $RowsInserted++
-                                
+                                if ($batch.Count -ge $Config.BathSettings.BatchSize) {
+                                    Write-Log "Writing batch of $($batch.Count) $ReportName records into SQLServer ..." -ForegroundColor Cyan
+                                    Write-ToSqlTable -TableName $ReportName -Data $batch
+                                    $RowsInserted += $batch.Count
+                                    $batch = @()
+                                }
                             } 
                             catch {
                                 Write-Log "Error while recovering department for $UserPrincipalName : $_" -ForegroundColor Yellow
                             }
                         }
+
+                        if ($batch.Count -gt 0) {
+                            Write-Log "Final flush: writing $($batch.Count) $ReportName records into SQLServer ..." -ForegroundColor Cyan
+                            Write-ToSqlTable -TableName $ReportName -Data $batch
+                            $RowsInserted += $batch.Count
+                        }
+
                         $RowsRetrievedOneDrive = $Data.Count
+
                         Write-ExecutionLog `
                             -ExecutionId $ExecutionId `
                             -ReportName $ReportName `
@@ -1175,6 +1240,8 @@ try {
                             -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
                     }
                     else {
+                        $batch = @()
+
                         foreach ($Row in $Data) {
                             $RootWebTemplate = $Row.'Root Web Template'
 
@@ -1186,78 +1253,63 @@ try {
                             if ([string]::IsNullOrEmpty($UserPrincipalName)) {
                                 Write-Log "UPN is empty" -ForegroundColor Yellow
                             }
-                            
+
+                            $UserDepartment = "NULL"
+
                             if ($RootWebTemplate -eq "Site Page Publishing") {
                                 $EncodedUpn = [System.Uri]::EscapeDataString($UserPrincipalName)
                                 $Url = "https://graph.microsoft.com/v1.0/users/"+$EncodedUpn+"?`$select=department"
+
                                 try {
                                     $Response = Invoke-CustomGraphRequest -Url $Url -Headers $UserHeaders
                                     $UserDepartment = $Response.department
-
-                                    $sharePointObject = [PSCustomObject]@{
-                                            StorageUsedGB            = $StorageUsedGB
-                                            ___Report_Refresh_Date   = $RefreshDate
-                                            Site_Id                  = $Row.'Site Id'
-                                            Site_URL                 = $Row.'Site URL'
-                                            Owner_Display_Name       = $Row.'Owner Display Name'
-                                            Is_Deleted               = $Row.'Is Deleted'
-                                            Last_Activity_Date       = $Row.'Last Activity Date'
-                                            File_Count               = $Row.'File Count'
-                                            Active_File_Count        = $Row.'Active File Count'
-                                            Storage_Used__Byte_      = $Row.'Storage Used (Byte)'
-                                            Storage_Allocated__Byte_ = $Row.'Storage Allocated (Byte)'
-                                            Owner_Principal_Name     = $UserPrincipalName
-                                            Report_Period            = $Row.'Report Period'
-                                            Page_View_Count          = $Row.'Page View Count'
-                                            Visited_Page_Count       = $Row.'Visited Page Count'
-                                            Root_Web_Template        = $Row.'Root Web Template'
-                                            department               = $UserDepartment
-                                            ReportPeriod             = $Period
-                                            ReportDate               = $RefreshDate
-                                            InsertedAt               = (Get-Date)
-                                            SourceReport             = $ReportName    
-                                        }
-
-                                    Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
-                                    Write-ToSqlTable -TableName $ReportName -Data @($sharePointObject) 
-                                    $RowsInserted++
                                 } 
                                 catch {
                                     Write-Log "Error while recovering department for $UserPrincipalName : $_" -ForegroundColor Yellow
                                 }
-                            } 
-                            else {
-                                $sharePointObject = [PSCustomObject]@{
-                                    StorageUsedGB            = $StorageUsedGB
-                                    ___Report_Refresh_Date   = $RefreshDate
-                                    Site_Id                  = $Row.'Site Id'
-                                    Site_URL                 = $Row.'Site URL'
-                                    Owner_Display_Name       = $Row.'Owner Display Name'
-                                    Is_Deleted               = $Row.'Is Deleted'
-                                    Last_Activity_Date       = $Row.'Last Activity Date'
-                                    File_Count               = $Row.'File Count'
-                                    Active_File_Count        = $Row.'Active File Count'
-                                    Storage_Used__Byte_      = $Row.'Storage Used (Byte)'
-                                    Storage_Allocated__Byte_ = $Row.'Storage Allocated (Byte)'
-                                    Owner_Principal_Name     = $UserPrincipalName
-                                    Report_Period            = $Row.'Report Period'
-                                    Page_View_Count          = $Row.'Page View Count'
-                                    Visited_Page_Count       = $Row.'Visited Page Count'
-                                    Root_Web_Template        = $Row.'Root Web Template'
-                                    department               = "NULL"
-                                    ReportPeriod             = $Period
-                                    ReportDate               = $RefreshDate
-                                    InsertedAt               = (Get-Date)
-                                    SourceReport             = $ReportName    
-                                }
+                            }
 
-                                Write-Log "Writing $ReportName record into SQLServer ..." -ForegroundColor Cyan
-                                Write-ToSqlTable -TableName $ReportName -Data @($sharePointObject) 
-                                $RowsInserted++
-                            } 
+                            $sharePointObject = [PSCustomObject]@{
+                                StorageUsedGB            = $StorageUsedGB
+                                ___Report_Refresh_Date   = $RefreshDate
+                                Site_Id                  = $Row.'Site Id'
+                                Site_URL                 = $Row.'Site URL'
+                                Owner_Display_Name       = $Row.'Owner Display Name'
+                                Is_Deleted               = $Row.'Is Deleted'
+                                Last_Activity_Date       = $Row.'Last Activity Date'
+                                File_Count               = $Row.'File Count'
+                                Active_File_Count        = $Row.'Active File Count'
+                                Storage_Used__Byte_      = $Row.'Storage Used (Byte)'
+                                Storage_Allocated__Byte_ = $Row.'Storage Allocated (Byte)'
+                                Owner_Principal_Name     = $UserPrincipalName
+                                Report_Period            = $Row.'Report Period'
+                                Page_View_Count          = $Row.'Page View Count'
+                                Visited_Page_Count       = $Row.'Visited Page Count'
+                                Root_Web_Template        = $RootWebTemplate
+                                department               = $UserDepartment
+                                ReportPeriod             = $Period
+                                ReportDate               = $RefreshDate
+                                InsertedAt               = (Get-Date)
+                                SourceReport             = $ReportName    
+                            }
+                            $batch += $sharePointObject
+
+                            if ($batch.Count -ge $Config.BathSettings.BatchSize) {
+                                Write-Log "Writing batch of $($batch.Count) $ReportName records into SQLServer ..." -ForegroundColor Cyan
+                                Write-ToSqlTable -TableName $ReportName -Data $batch
+                                $RowsInserted += $batch.Count
+                                $batch = @()
+                            }
                         }
-    
+
+                        if ($batch.Count -gt 0) {
+                            Write-Log "Final flush: writing $($batch.Count) $ReportName records into SQLServer ..." -ForegroundColor Cyan
+                            Write-ToSqlTable -TableName $ReportName -Data $batch
+                            $RowsInserted += $batch.Count
+                        }
+
                         $RowsRetrievedSharePoint = $Data.Count
+
                         Write-ExecutionLog `
                             -ExecutionId $ExecutionId `
                             -ReportName $ReportName `
@@ -1296,9 +1348,16 @@ try {
     ***************************************
     STEP 2 - CASE: Users
     *************************************** " -ForegroundColor Magenta
+    $AccessToken = Get-ValidGraphToken
+    $UserHeaders = @{
+        Authorization    = "Bearer $AccessToken"
+        ConsistencyLevel = "eventual"
+    }
+
     $AllUsers = @()
     $UsersTable = "MicrosoftUsers"
     $Url = "https://graph.microsoft.com/v1.0/users?`$select=id,displayName,userPrincipalName,mail,department,jobTitle,accountEnabled,createdDateTime,country"
+
     do {
         $Response = Invoke-CustomGraphRequest -Url $Url -Headers $UserHeaders
         if ($Response -and $Response.value) {
@@ -1312,9 +1371,11 @@ try {
 
     try {
         $RowsInserted = 0
+        $batch = @()
+
         foreach ($User in $AllUsers) {
             Write-Log "Retrieving user $($User.userPrincipalName) details" -ForegroundColor Cyan
-            
+
             $userObject = [PSCustomObject]@{
                 id                = $User.id
                 displayName       = $User.displayName
@@ -1326,10 +1387,22 @@ try {
                 createdDateTime   = $User.createdDateTime
                 countryOrRegion   = $User.country
             }
-            Write-Log "Writing $($User.userPrincipalName) details into SQLServer ..." -ForegroundColor Cyan
-            Write-ToSqlTable -TableName $UsersTable -Data $userObject
-            $RowsInserted++
+            $batch += $userObject
+
+            if ($batch.Count -ge $Config.BathSettings.BatchSize) {
+                Write-Log "Writing batch of $($batch.Count) users into SQLServer ..." -ForegroundColor Cyan
+                Write-ToSqlTable -TableName $UsersTable -Data $batch
+                $RowsInserted += $batch.Count
+                $batch = @()
+            }
         }
+
+        if ($batch.Count -gt 0) {
+            Write-Log "Final flush: writing $($batch.Count) users into SQLServer ..." -ForegroundColor Cyan
+            Write-ToSqlTable -TableName $UsersTable -Data $batch
+            $RowsInserted += $batch.Count
+        }
+
         $TotalRowsInsertedUsers = $RowsInserted
         $TotalRowsRetrievedUsers = $AllUsers.Count
 
