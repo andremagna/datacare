@@ -241,7 +241,6 @@ function Write-ExecutionLog {
 
     $MachineName = $env:COMPUTERNAME
     $PSVersion   = $PSVersionTable.PSVersion.ToString()
-
     if ($ReportName) { $ReportName = $ReportName.Replace("'", "''") } else { $ReportName = "" }
     if ($Status)     { $Status     = $Status.Replace("'", "''") } else { $Status = "" }
     if ($ErrorMessage) { $ErrorMessage = $ErrorMessage.Replace("'", "''") } else { $ErrorMessage = $null }
@@ -348,7 +347,6 @@ IF DB_ID(N'$($Config.Sql.SqlDBTarget)') IS NULL
         $createSql = $table.Value
 
         $checkQuery = "IF OBJECT_ID('dbo.$tableName','U') IS NULL SELECT 0 ELSE SELECT 1"
-
         $exists = Invoke-Sqlcmd `
             -ConnectionString $targetConnectionString `
             -Query $checkQuery |
@@ -421,9 +419,7 @@ function Write-ToSqlTable {
         WHERE TABLE_NAME = '$TableName'
         "
 
-        $sqlColumns = Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $schemaQuery |
-                      Select-Object -ExpandProperty COLUMN_NAME
-
+        $sqlColumns = Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $schemaQuery | Select-Object -ExpandProperty COLUMN_NAME
         if (-not $sqlColumns) {
             throw "Table dbo.$TableName does not exist."
         }
@@ -446,7 +442,6 @@ function Write-ToSqlTable {
 
             foreach ($sqlCol in $sqlColumns) {
                 $normalizedSql = $sqlCol.Trim().ToLower()
-
                 if ($normalizedSql -eq "insertedat") {
                     $dr[$sqlCol] = Get-Date
                     continue
@@ -583,7 +578,6 @@ AND s.name = '$Schema'
             -ConnectionString $targetConnectionString `
             -Query $query `
             -ErrorAction Stop
-
         return [math]::Round($result.TotalMB, 5)
     }
     catch {
@@ -844,7 +838,6 @@ function Invoke-CustomGraphRequest {
     try { return Invoke-RestMethod -Uri $Url -Headers $Headers -Method GET }
     catch {
         $statusCode = $_.Exception.Response.StatusCode.value__
-
         if ($statusCode -eq 401) {
             Write-Log "401 detected → refreshing Graph token..." -ForegroundColor Yellow
 
