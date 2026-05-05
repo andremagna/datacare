@@ -9,7 +9,6 @@
     Retrieved data includes:
         - Exchange mailbox usage:
         https://learn.microsoft.com/en-us/graph/api/reportroot-getmailboxusagedetail?view=graph-rest-1.0&tabs=http
-        https://learn.microsoft.com/en-us/powershell/module/exchangepowershell/get-exomailboxstatistics?view=exchange-ps
         - OneDrive usage:
         https://learn.microsoft.com/en-us/graph/api/reportroot-getonedriveusageaccountdetail?view=graph-rest-1.0&tabs=http
         - SharePoint site usage:
@@ -38,7 +37,6 @@
     - Azure AD App Registration (Application permissions) with:
         * Reports.Read.All (Microsoft Graph) - grant admin consent
         * User.Read.All (Microsoft Graph) - grant admin consent
-        * Exchange.ManageAsAp (Office 365Exchange Online(1)) - grant admin consent
 
 .CONFIGURATION
     The following variables must be configured:
@@ -68,6 +66,9 @@
 #     CONFIGURATIONS
 # ======================
 $Config = @{
+    #TenantId     = "35734bde-3e33-4eb6-8dd2-0c96b30981bf"
+    #ClientId     = "40f32fed-ed3e-48a3-9dd5-891cdf0a39de"
+    #CertificateThumbprint = "6DEEF374447A8014CFA7D68C3B2691ACE43C6E4D"
     TenantId     = "76ff1baa-3307-46aa-a752-cc3736d8a2b2"
     ClientId     = "dd80738f-6094-43ff-bf26-03fe4e3bc7da"
     CertificateThumbprint = "4EDBFF09D6B70180A0DC56D8647F6FD44AC99C81"
@@ -77,7 +78,7 @@ $Config = @{
     Sql = @{
         Server      = "localhost\SQLEXPRESS"
         SqlDBMaster = "master"
-        SqlDBTarget = "DataCare"
+        SqlDBTarget = "DataCare-Demo"
         CreateTable_Exchange = "
         IF OBJECT_ID('dbo.MicrosoftExchange','U') IS NULL
         CREATE TABLE dbo.MicrosoftExchange (
@@ -96,6 +97,7 @@ $Config = @{
             Prohibit_Send_Receive_Quota__Byte_ BIGINT,
             Deleted_Item_Count INT,
             Deleted_Item_Size__Byte_ BIGINT,
+            DeletedItemSizeGB FLOAT,
             Deleted_Item_Quota__Byte_ BIGINT,
             Has_Archive NVARCHAR(50),
             Report_Period NVARCHAR(50),
@@ -104,26 +106,7 @@ $Config = @{
             InsertedAt DATETIME2,
             SourceReport NVARCHAR(100),
             Department NVARCHAR(50),
-
-            -- Primary mailbox statistics
-            Primary_Item_Count INT,
-            Primary_TotalItemSize NVARCHAR(50),
-            Primary_Total_Size_Bytes BIGINT,
-            Primary_SystemMessage_Count INT,
-            Primary_SystemMessage_Size_Bytes BIGINT,
-            Primary_Recoverable_Count INT,
-            Primary_Recoverable_Size_Bytes BIGINT,
-            Primary_Recoverable_Mode NVARCHAR(50),
-
-            -- Archive mailbox statistics
-            Archive_Item_Count INT,
-            Archive_TotalItemSize NVARCHAR(50),
-            Archive_Total_Size_Bytes BIGINT,
-            Archive_SystemMessage_Count INT,
-            Archive_SystemMessage_Size_Bytes BIGINT,
-            Archive_Recoverable_Count INT,
-            Archive_Recoverable_Size_Bytes BIGINT,
-            Archive_Recoverable_Mode NVARCHAR(50)
+            CountryOrRegion NVARCHAR(50)
         );"
         CreateTable_OneDrive = "
         IF OBJECT_ID('dbo.MicrosoftOneDrive','U') IS NULL
@@ -141,6 +124,7 @@ $Config = @{
             Storage_Allocated__Byte_ BIGINT,
             Owner_Principal_Name NVARCHAR(255) NOT NULL,
             Department NVARCHAR(50),
+            CountryOrRegion NVARCHAR(50),
             Report_Period NVARCHAR(50),
             ReportPeriod NVARCHAR(50),
             ReportDate DATETIME2,
@@ -164,6 +148,7 @@ $Config = @{
             Storage_Used__Byte_ BIGINT,
             Storage_Allocated__Byte_ BIGINT,
             Department NVARCHAR(50),
+            CountryOrRegion NVARCHAR(50),
             Root_Web_Template NVARCHAR(100),
             Owner_Principal_Name NVARCHAR(255),
             Report_Period NVARCHAR(50),
@@ -196,7 +181,8 @@ $Config = @{
             Status NVARCHAR(50),
             RowsRetrieved INT,
             RowsInserted INT,
-            DurationSeconds INT,
+            TableSizeMB FLOAT,
+            DurationTimeJob NVARCHAR(255),
             ErrorMessage NVARCHAR(MAX),
             MachineName NVARCHAR(255),
             PowerShellVersion NVARCHAR(50)
@@ -215,6 +201,11 @@ $Config = @{
         GraphTokenCreatedAt = $null
         GraphTokenLifetimeMinutes = 55
         GraphTokenSkewMinutes = 5
+    }
+    SystemParameters = @{
+        TotalRowsRetrieved = 0
+        TotalRowsInserted  = 0
+        TotalRowsInsertedUsers = 0
     }
 }
 $masterConnectionString = "Server=$($Config.Sql.Server);Database=$($Config.Sql.SqlDBMaster);Trusted_Connection=True;TrustServerCertificate=True;"
@@ -243,8 +234,9 @@ function Write-ExecutionLog {
         [string]$Status,
         [int]$RowsRetrieved = 0,
         [int]$RowsInserted = 0,
-        [int]$DurationSeconds = 0,
-        [string]$ErrorMessage = $null
+        [string]$ErrorMessage = $null,
+        [string]$DurationTimeJob,
+        [float]$TableSizeMB = $null
     )
 
     $MachineName = $env:COMPUTERNAME
@@ -253,17 +245,20 @@ function Write-ExecutionLog {
     if ($ReportName) { $ReportName = $ReportName.Replace("'", "''") } else { $ReportName = "" }
     if ($Status)     { $Status     = $Status.Replace("'", "''") } else { $Status = "" }
     if ($ErrorMessage) { $ErrorMessage = $ErrorMessage.Replace("'", "''") } else { $ErrorMessage = $null }
+    if ($DurationTimeJob)     { $DurationTimeJob     = $DurationTimeJob.Replace("'", "''") } else { $DurationTimeJob = "" }
 
     $query = @"
 INSERT INTO dbo.ExecutionLog
 (ExecutionId, ExecutionDate, ReportName, Status,
- RowsRetrieved, RowsInserted, DurationSeconds,
- ErrorMessage, MachineName, PowerShellVersion)
+ RowsRetrieved, RowsInserted, DurationTimeJob, 
+ ErrorMessage, 
+ MachineName, PowerShellVersion, TableSizeMB)
 VALUES
 ('$ExecutionId', SYSDATETIME(), '$ReportName', '$Status',
- $RowsRetrieved, $RowsInserted, $DurationSeconds,
+ $RowsRetrieved, $RowsInserted, '$DurationTimeJob',
  $(if($ErrorMessage){"'$ErrorMessage'"}else{"NULL"}),
- '$MachineName', '$PSVersion')
+ '$MachineName', '$PSVersion',  $(if($TableSizeMB){"$TableSizeMB"}else{"NULL"}
+ ))
 "@
 
     try {
@@ -314,152 +309,6 @@ function Import-RequiredModule {
     }
 }
 
-# EXCHANGE
-function Connect-ExchangeAppOnly {
-    Write-Log "Connecting to Exchange Online ..." -ForegroundColor Cyan
-    Write-Log "Enter/Select your credentials to log in (MFA)..." -ForegroundColor Magenta
-
-    Connect-ExchangeOnline
-
-    Write-Log "Connected to Exchange Online" -ForegroundColor Green
-}
-
-function Convert-ToBytes {
-    param([string]$SizeString)
-
-    if (-not $SizeString) { return 0 }
-    if ($SizeString -match '\((\d[\d,]*) bytes\)') {
-        return [Int64]($matches[1] -replace ',', '')
-    }
-    elseif ($SizeString -match '([0-9,.]+)\s*GB') {
-        return [math]::Round([double]$matches[1] * 1GB)
-    }
-    elseif ($SizeString -match '([0-9,.]+)\s*MB') {
-        return [math]::Round([double]$matches[1] * 1MB)
-    }
-    elseif ($SizeString -match '([0-9,.]+)\s*KB') {
-        return [math]::Round([double]$matches[1] * 1KB)
-    }
-    else {
-        return 0
-    }
-}
-
-function Get-ExchangeMailboxDeepStats {
-    param (
-        [Parameter(Mandatory)]
-        [string]$UserPrincipalName
-    )
-
-    $result = [ordered]@{
-        Primary_Item_Count               = 0
-        Primary_Total_Size_Bytes         = 0
-        Primary_TotalItemSize            = ""
-        Primary_SystemMessageCount       = 0
-        Primary_SystemMessageSize        = ""
-        Primary_Recoverable_Count        = 0
-        Primary_Recoverable_Size_Bytes   = 0
-        Primary_Recoverable_Mode         = "NotPresent"
-
-        Archive_Item_Count               = 0
-        Archive_Total_Size_Bytes         = 0
-        Archive_TotalItemSize            = ""
-        Archive_SystemMessageCount       = 0
-        Archive_SystemMessageSize        = ""
-        Archive_Recoverable_Count        = 0
-        Archive_Recoverable_Size_Bytes   = 0
-        Archive_Recoverable_Mode         = "NotPresent"
-    }
-
-    try {
-        $primaryStats = Get-EXOMailboxStatistics `
-            -Identity $UserPrincipalName `
-            -Properties ItemCount,TotalItemSize,SystemMessageCount,SystemMessageSize `
-            -ErrorAction Stop
-
-        if ($primaryStats) {
-
-            $result.Primary_Item_Count         = $primaryStats.ItemCount
-            $result.Primary_TotalItemSize      = $primaryStats.TotalItemSize
-            $result.Primary_SystemMessageCount = $primaryStats.SystemMessageCount
-            $result.Primary_SystemMessageSize  = $primaryStats.SystemMessageSize
-
-            if ($primaryStats.TotalItemSize) {
-                $result.Primary_Total_Size_Bytes =
-                    Convert-ToBytes $primaryStats.TotalItemSize
-            }
-        }
-
-        $primaryRI = Get-MailboxFolderStatistics `
-            -Identity $UserPrincipalName `
-            -FolderScope RecoverableItems `
-            -ErrorAction SilentlyContinue
-
-        if ($primaryRI) {
-            foreach ($folder in $primaryRI) {
-                if ($folder.Name -eq "Recoverable Items") {
-
-                    $result.Primary_Recoverable_Count =
-                        $folder.ItemsInFolderAndSubfolders
-
-                    if ($folder.FolderAndSubfolderSize) {
-                        $result.Primary_Recoverable_Size_Bytes =
-                            Convert-ToBytes $folder.FolderAndSubfolderSize
-                    }
-
-                    $result.Primary_Recoverable_Mode = "Aggregated"
-                    break
-                }
-            }
-        }
-
-        $archiveStats = Get-EXOMailboxStatistics `
-            -Identity $UserPrincipalName `
-            -Archive `
-            -Properties ItemCount,TotalItemSize,SystemMessageCount,SystemMessageSize `
-            -ErrorAction SilentlyContinue
-
-        if ($archiveStats) {
-            $result.Archive_Item_Count         = $archiveStats.ItemCount
-            $result.Archive_TotalItemSize      = $archiveStats.TotalItemSize
-            $result.Archive_SystemMessageCount = $archiveStats.SystemMessageCount
-            $result.Archive_SystemMessageSize  = $archiveStats.SystemMessageSize
-
-            if ($archiveStats.TotalItemSize) {
-                $result.Archive_Total_Size_Bytes =
-                    Convert-ToBytes $archiveStats.TotalItemSize
-            }
-
-            $archiveRI = Get-MailboxFolderStatistics `
-                -Identity $UserPrincipalName `
-                -Archive `
-                -FolderScope RecoverableItems `
-                -ErrorAction SilentlyContinue
-
-            if ($archiveRI) {
-                foreach ($folder in $archiveRI) {
-                    if ($folder.Name -eq "Recoverable Items") {
-                        $result.Archive_Recoverable_Count =
-                            $folder.ItemsInFolderAndSubfolders
-                        if ($folder.FolderAndSubfolderSize) {
-                            $result.Archive_Recoverable_Size_Bytes =
-                                Convert-ToBytes $folder.FolderAndSubfolderSize
-                        }
-
-                        $result.Archive_Recoverable_Mode = "Aggregated"
-                        break
-                    }
-                }
-            }
-        }
-    }
-    catch {
-        Write-Host "Mailbox enrichment failed for $UserPrincipalName : $($_.Exception.Message)" -ForegroundColor Red
-    }
-
-    return $result
-}
-
 # SQLSERVER
 function Test-SqlConnection {
     try {
@@ -473,7 +322,7 @@ function Test-SqlConnection {
     }
 }
 
-function Initialize-Database {
+function Database-Init {
     Write-Log "Ensuring database $($Config.Sql.SqlDBTarget) exists..." Cyan
 
     $createDbQuery = @"
@@ -517,6 +366,32 @@ IF DB_ID(N'$($Config.Sql.SqlDBTarget)') IS NULL
         }
     }
     Write-Log "Database initialization completed" Green
+}
+
+function DatabaseTable-DropIfNotEmpty {
+    $Tables = @{
+        MicrosoftExchange   = $Config.Sql.CreateTable_Exchange
+        MicrosoftOneDrive   = $Config.Sql.CreateTable_OneDrive
+        MicrosoftSharePoint = $Config.Sql.CreateTable_SharePoint
+        MicrosoftUsers      = $Config.Sql.CreateTable_Users
+        PowerBICountryOrRegion = $Config.Sql.CreateTable_PowerBICountryOrRegion
+    }
+    foreach ($table in $Tables.GetEnumerator()) {
+        $tableKey = $table.Key
+        $createQuery = $table.Value
+        $tableName = "dbo.$tableKey"
+
+        $count = Get-ReportCountFromDb -Table $tableKey
+        if ($count -gt 0) {
+            Write-Log "Number of records in $tableName : $count. Dropping and recreating $tableName table..." Yellow
+            $dropQuery = "IF OBJECT_ID('$tableName','U') IS NOT NULL DROP TABLE $tableName;"
+            Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $dropQuery
+            Write-Log "$tableName table dropped successfully." Green
+
+            Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $createQuery
+            Write-Log "Table '$tableName' created successfully" Green
+        }
+    }
 }
 
 function NormalizeData {
@@ -587,7 +462,17 @@ function Write-ToSqlTable {
                 if ($normalizedSql -eq "storageusedgb") {
                     if ($propertyMap.ContainsKey("storageusedbyte")) {
                         $bytes = $row.($propertyMap["storageusedbyte"])
-                        $dr[$sqlCol] = if ($bytes) { [math]::Round(($bytes / 1GB),2) } else { [DBNull]::Value }
+                        $dr[$sqlCol] = if ($bytes) { [math]::Round(($bytes / 1GB),5) } else { [DBNull]::Value }
+                    }
+                    else {
+                        $dr[$sqlCol] = [DBNull]::Value
+                    }
+                    continue
+                }
+                if ($normalizedSql -eq "deleteditemsizegb") {
+                    if ($propertyMap.ContainsKey("deleteditemsizebyte")) {
+                        $bytes = $row.($propertyMap["deleteditemsizebyte"])
+                        $dr[$sqlCol] = if ($bytes) { [math]::Round(($bytes / 1GB),5) } else { [DBNull]::Value }
                     }
                     else {
                         $dr[$sqlCol] = [DBNull]::Value
@@ -674,9 +559,42 @@ function Get-ReportCountFromDb {
     }
 }
 
-# POWERBI KPI DATAMODEL
-function CreatePowerBIDataModelHistory {
+function Get-TableSizeMB {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$TableName,
+        [string]$Schema = "dbo"
+    )
+
+    try {
         $query = @"
+SELECT 
+    SUM(a.data_pages) * 8.0 / 1024 AS TotalMB
+FROM sys.tables t
+JOIN sys.schemas s ON t.schema_id = s.schema_id
+JOIN sys.indexes i ON t.object_id = i.object_id
+JOIN sys.partitions p ON i.object_id = p.object_id AND i.index_id = p.index_id
+JOIN sys.allocation_units a ON p.partition_id = a.container_id
+WHERE t.name = '$TableName'
+AND s.name = '$Schema'
+"@
+
+        $result = Invoke-Sqlcmd `
+            -ConnectionString $targetConnectionString `
+            -Query $query `
+            -ErrorAction Stop
+
+        return [math]::Round($result.TotalMB, 5)
+    }
+    catch {
+        Write-Log "Error retrieving the size for $Schema.$TableName : $_" Red
+        return 0
+    }
+}
+
+# STORED PROCEDURE
+function CreatePowerBIDataModelHistory {
+    $query = @"
 IF OBJECT_ID('$($Config.Sql.SqlDBTarget).dbo.PowerBIDataModelHistory', 'U') IS NULL
 BEGIN
     CREATE TABLE [$($Config.Sql.SqlDBTarget)].[dbo].[PowerBIDataModelHistory]
@@ -684,20 +602,10 @@ BEGIN
         ExecutionId UNIQUEIDENTIFIER,
         [Date] DATETIME,
         department NVARCHAR(255),
-        Exchange_Total_Primary_Item_Count BIGINT,
-        Exchange_Total_Archive_Item_Count BIGINT,
-        Exchange_Total_Primary_Total_Size_GB DECIMAL(18,2),
-        Exchange_Total_Archive_Total_Size_GB DECIMAL(18,2),
-        Exchange_Total_Primary_Total_Size_Bytes BIGINT,
-        Exchange_Total_Primary_SystemMessage_Count BIGINT,
-        Exchange_Total_Primary_SystemMessage_Size_Bytes BIGINT,
-        Exchange_Total_Primary_Recoverable_Count BIGINT,
-        Exchange_Total_Primary_Recoverable_Size_Bytes BIGINT,
-        Exchange_Total_Archive_Total_Size_Bytes BIGINT,
-        Exchange_Total_Archive_SystemMessage_Count BIGINT,
-        Exchange_Total_Archive_SystemMessage_Size_Bytes BIGINT,
-        Exchange_Total_Archive_Recoverable_Count BIGINT,
-        Exchange_Total_Archive_Recoverable_Size_Bytes BIGINT,
+        Exchange_StorageUsedGB DECIMAL(18,2),
+        Exchange_Item_Count BIGINT,
+        Exchange_Deleted_Item_Count BIGINT,
+        Exchange_DeletedItemSizeGB DECIMAL(18,2),
         OneDrive_Total_File_Count BIGINT,
         OneDrive_Total_StorageUsedGB DECIMAL(18,2),
         SharePoint_Total_File_Count BIGINT,
@@ -713,20 +621,10 @@ SELECT
     @ExecutionId,
     GETDATE(),
     e.department,
-    e.Exchange_Total_Primary_Item_Count,
-    e.Exchange_Total_Archive_Item_Count,
-    e.Exchange_Total_Primary_Total_Size_GB,
-    e.Exchange_Total_Archive_Total_Size_GB,
-    e.Exchange_Total_Primary_Total_Size_Bytes,
-    e.Exchange_Total_Primary_SystemMessage_Count,
-    e.Exchange_Total_Primary_SystemMessage_Size_Bytes,
-    e.Exchange_Total_Primary_Recoverable_Count,
-    e.Exchange_Total_Primary_Recoverable_Size_Bytes,
-    e.Exchange_Total_Archive_Total_Size_Bytes,
-    e.Exchange_Total_Archive_SystemMessage_Count,
-    e.Exchange_Total_Archive_SystemMessage_Size_Bytes,
-    e.Exchange_Total_Archive_Recoverable_Count,
-    e.Exchange_Total_Archive_Recoverable_Size_Bytes,
+    e.Exchange_StorageUsedGB,
+    e.Exchange_Item_Count,
+    e.Exchange_Deleted_Item_Count,
+    e.Exchange_DeletedItemSizeGB,
     o.OneDrive_Total_File_Count,
     o.OneDrive_Total_StorageUsedGB,
     s.SharePoint_Total_File_Count,
@@ -736,21 +634,12 @@ FROM
 (
     SELECT
         ISNULL(department,'Unknown') AS department,
-        SUM(ISNULL([Primary_Item_Count],0)) AS Exchange_Total_Primary_Item_Count,
-        SUM(ISNULL([Archive_Item_Count],0)) AS Exchange_Total_Archive_Item_Count,
-        CAST(ROUND(SUM(ISNULL([Primary_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Primary_Total_Size_GB,
-        CAST(ROUND(SUM(ISNULL([Archive_Total_Size_Bytes],0)) / 1073741824.0, 2) AS DECIMAL(18,2)) AS Exchange_Total_Archive_Total_Size_GB,
-        SUM(ISNULL([Primary_Total_Size_Bytes],0)) AS Exchange_Total_Primary_Total_Size_Bytes,
-        SUM(ISNULL([Primary_SystemMessage_Count],0)) AS Exchange_Total_Primary_SystemMessage_Count,
-        SUM(ISNULL([Primary_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Primary_SystemMessage_Size_Bytes,
-        SUM(ISNULL([Primary_Recoverable_Count],0)) AS Exchange_Total_Primary_Recoverable_Count,
-        SUM(ISNULL([Primary_Recoverable_Size_Bytes],0)) AS Exchange_Total_Primary_Recoverable_Size_Bytes,
-        SUM(ISNULL([Archive_Total_Size_Bytes],0)) AS Exchange_Total_Archive_Total_Size_Bytes,
-        SUM(ISNULL([Archive_SystemMessage_Count],0)) AS Exchange_Total_Archive_SystemMessage_Count,
-        SUM(ISNULL([Archive_SystemMessage_Size_Bytes],0)) AS Exchange_Total_Archive_SystemMessage_Size_Bytes,
-        SUM(ISNULL([Archive_Recoverable_Count],0)) AS Exchange_Total_Archive_Recoverable_Count,
-        SUM(ISNULL([Archive_Recoverable_Size_Bytes],0)) AS Exchange_Total_Archive_Recoverable_Size_Bytes
+        SUM(ISNULL([StorageUsedGB],0)) AS Exchange_StorageUsedGB,
+        SUM(ISNULL([Item_Count],0)) AS Exchange_Item_Count,
+        SUM(ISNULL([Deleted_Item_Count],0)) AS Exchange_Deleted_Item_Count,
+        SUM(ISNULL([DeletedItemSizeGB],0)) AS Exchange_DeletedItemSizeGB
     FROM [$($Config.Sql.SqlDBTarget)].[dbo].[MicrosoftExchange]
+    WHERE CountryOrRegion != 'Russia'
     GROUP BY ISNULL(department,'Unknown')
 ) e
 LEFT JOIN
@@ -760,6 +649,7 @@ LEFT JOIN
         SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
         SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
     FROM [$($Config.Sql.SqlDBTarget)].[dbo].[MicrosoftOneDrive]
+    WHERE CountryOrRegion != 'Russia'
     GROUP BY ISNULL(department,'Unknown')
 ) o ON e.department = o.department
 LEFT JOIN
@@ -769,6 +659,7 @@ LEFT JOIN
         SUM(ISNULL([File_Count],0)) AS SharePoint_Total_File_Count,
         SUM(ISNULL([StorageUsedGB],0)) AS SharePoint_Total_StorageUsedGB
     FROM [$($Config.Sql.SqlDBTarget)].[dbo].[MicrosoftSharePoint]
+    WHERE CountryOrRegion != 'Russia'
     GROUP BY ISNULL(department,'Unknown')
 ) s ON e.department = s.department
 LEFT JOIN
@@ -777,10 +668,11 @@ LEFT JOIN
         ISNULL(department,'Unknown') AS department,
         COUNT(DISTINCT [UserPrincipalName]) AS Users_Total
     FROM [$($Config.Sql.SqlDBTarget)].[dbo].[MicrosoftUsers]
-    WHERE [UserPrincipalName] IS NOT NULL
+    WHERE Mail like '%@ferrero.com' AND AccountEnabled = 'True' AND CountryOrRegion != 'Russia'
     GROUP BY ISNULL(department,'Unknown')
 ) u ON e.department = u.department;
 "@
+
     Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $query
     Write-Log "[$($Config.Sql.SqlDBTarget)].[dbo].[PowerBIDataModelHistory] table created successfully." Green
 }
@@ -977,41 +869,12 @@ try {
     $ExecutionId = [guid]::NewGuid()
 
     Import-RequiredModule -ModuleName "SqlServer"
-    Import-RequiredModule -ModuleName "ExchangeOnlineManagement"
-
     if (-not (Test-SqlConnection)) {
         Write-Log "SQL connection failed." -ForegroundColor Red
         throw "SQL connection failed."
     }
-
-    Initialize-Database
-
-    $TotalRowsRetrieved = 0
-    $TotalRowsInserted  = 0
-
-    $Tables = @{
-        MicrosoftExchange   = $Config.Sql.CreateTable_Exchange
-        MicrosoftOneDrive   = $Config.Sql.CreateTable_OneDrive
-        MicrosoftSharePoint = $Config.Sql.CreateTable_SharePoint
-        MicrosoftUsers      = $Config.Sql.CreateTable_Users
-        PowerBICountryOrRegion = $Config.Sql.CreateTable_PowerBICountryOrRegion
-    }
-    foreach ($table in $Tables.GetEnumerator()) {
-        $tableKey = $table.Key
-        $createQuery = $table.Value
-        $tableName = "dbo.$tableKey"
-
-        $count = Get-ReportCountFromDb -Table $tableKey
-        if ($count -gt 0) {
-            Write-Log "Number of records in $tableName : $count. Dropping and recreating $tableName table..." Yellow
-            $dropQuery = "IF OBJECT_ID('$tableName','U') IS NOT NULL DROP TABLE $tableName;"
-            Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $dropQuery
-            Write-Log "$tableName table dropped successfully." Green
-
-            Invoke-Sqlcmd -ConnectionString $targetConnectionString -Query $createQuery
-            Write-Log "Table '$tableName' created successfully" Green
-        }
-    }
+    Database-Init
+    DatabaseTable-DropIfNotEmpty
 
     $AccessToken = Get-ValidGraphToken
     $ReportHeaders = @{
@@ -1023,10 +886,7 @@ try {
         ConsistencyLevel = "eventual"
     }
 
-    Connect-ExchangeAppOnly
-
     $TaskStart = Get-Date
-
     #STEP 1: exchange, onedrive and sharepoint
     $Reports = @{
         MicrosoftExchange   = "https://graph.microsoft.com/v1.0/reports/getMailboxUsageDetail(period='$($Config.GraphExecution.Period)')"
@@ -1049,7 +909,7 @@ try {
                     $RowsInserted  = 0
 
                     if ($ReportName -eq "MicrosoftExchange") {
-                        $attempt = 0
+                        $TaskStartExchange = Get-Date
                         $batch = @()
 
                         foreach ($Row in $Data) {
@@ -1064,112 +924,71 @@ try {
                             }
 
                             $EncodedUpn = [System.Uri]::EscapeDataString($UserPrincipalName)
-                            $Url = "https://graph.microsoft.com/v1.0/users/"+$EncodedUpn+"?`$select=department"
+                            $Url = "https://graph.microsoft.com/v1.0/users/"+$EncodedUpn+"?`$select=department,country"
 
                             try {
                                 $Response = Invoke-CustomGraphRequest -Url $Url -Headers $UserHeaders
-                                $UserDepartment = $Response.department
 
-                                $condition = $true
-                                while ($condition) {
-                                    try {
-                                        $deepStats = Get-ExchangeMailboxDeepStats -UserPrincipalName $UserPrincipalName
-
-                                        $exchangeObject = [PSCustomObject]@{
-                                            displayName                 = $Row.'Display Name'
-                                            userPrincipalName           = $Row.'User Principal Name'
-                                            mail                        = $Row.'User Principal Name'
-                                            department                  = $UserDepartment
-                                            Report_Refresh_Date         = $RefreshDate
-                                            Is_Deleted                  = $Row.'Is Deleted'
-                                            Deleted_Date                = $Row.'Deleted Date'
-                                            Created_Date                = $Row.'Created Date'
-                                            Last_Activity_Date          = $Row.'Last Activity Date'
-                                            Item_Count                  = $Row.'Item Count'
-                                            Storage_Used__Byte_         = $Row.'Storage Used (Byte)'
-                                            Issue_Warning_Quota__Byte_  = $Row.'Issue Warning Quota (Byte)'
-                                            Prohibit_Send_Quota__Byte_  = $Row.'Prohibit Send Quota (Byte)'
-                                            Prohibit_Send_Receive_Quota__Byte_ = $Row.'Prohibit Send/Receive Quota (Byte)'
-                                            Deleted_Item_Count          = $Row.'Deleted Item Count'
-                                            Deleted_Item_Size__Byte_    = $Row.'Deleted Item Size (Byte)'
-                                            Deleted_Item_Quota__Byte_   = $Row.'Deleted Item Quota (Byte)'
-                                            Has_Archive                 = $Row.'Has Archive'
-                                            Report_Period               = $Row.'Report Period'
-                                        }
-
-                                        if ($deepStats) {
-                                            foreach ($key in $deepStats.Keys) {
-                                                $exchangeObject | Add-Member -NotePropertyName $key -NotePropertyValue $deepStats[$key] -Force
-                                            }
-                                        }
-
-                                        $batch += $exchangeObject
-                                        $RowsInserted++
-
-                                        if ($batch.Count -ge $Config.BathSettings.BatchSize) {
-                                            Write-Log "Writing batch of $($batch.Count) records into SQLServer ..." -ForegroundColor Cyan
-                                            Write-ToSqlTable -TableName $ReportName -Data $batch
-                                            $batch = @()
-                                        }
-
-                                        $condition = $false
-                                    }
-                                    catch {
-                                        $attempt++
-                                        $statusCode = $null
-                                        $retry = $null
-
-                                        if ($_.Exception.Response) {
-                                            $statusCode = $_.Exception.Response.StatusCode.value__
-                                            $retryHeader = $_.Exception.Response.Headers["Retry-After"]
-                                        }
-
-                                        switch ($statusCode) {
-                                            429 {
-                                                if ($retryHeader -match '^\d+$') {
-                                                    $retry = [int]$retryHeader
-                                                } else {
-                                                    $retry = 5
-                                                }
-                                                Write-Log "429 Throttling for $UserPrincipalName → retry in $retry sec (attempt $attempt)" -ForegroundColor Yellow
-                                                Start-Sleep -Seconds $retry
-                                            }
-                                            {$_ -in @(500, 503)} {
-                                                $retry = 5 * $attempt
-                                                Write-Log "Server error $statusCode for $UserPrincipalName → retry in $retry sec (attempt $attempt)" -ForegroundColor Yellow
-                                                Start-Sleep -Seconds $retry
-                                            }
-                                            default {
-                                                Write-Log "Deep stats FAILED for $UserPrincipalName : $($_.Exception.Message)" -ForegroundColor Red
-                                                $condition = $false
-                                                throw
-                                            }
-                                        }
-                                    }
+                                $exchangeObject = [PSCustomObject]@{
+                                    displayName                 = $Row.'Display Name'
+                                    userPrincipalName           = $Row.'User Principal Name'
+                                    mail                        = $Row.'User Principal Name'
+                                    department                  = $Response.department
+                                    countryOrRegion             = $Response.country
+                                    Report_Refresh_Date         = $RefreshDate
+                                    Is_Deleted                  = $Row.'Is Deleted'
+                                    Deleted_Date                = $Row.'Deleted Date'
+                                    Created_Date                = $Row.'Created Date'
+                                    Last_Activity_Date          = $Row.'Last Activity Date'
+                                    Item_Count                  = $Row.'Item Count'
+                                    Storage_Used__Byte_         = $Row.'Storage Used (Byte)'
+                                    Issue_Warning_Quota__Byte_  = $Row.'Issue Warning Quota (Byte)'
+                                    Prohibit_Send_Quota__Byte_  = $Row.'Prohibit Send Quota (Byte)'
+                                    Prohibit_Send_Receive_Quota__Byte_ = $Row.'Prohibit Send/Receive Quota (Byte)'
+                                    Deleted_Item_Count          = $Row.'Deleted Item Count'
+                                    Deleted_Item_Size__Byte_    = $Row.'Deleted Item Size (Byte)'
+                                    Deleted_Item_Quota__Byte_   = $Row.'Deleted Item Quota (Byte)'
+                                    Has_Archive                 = $Row.'Has Archive'
+                                    Report_Period               = $Row.'Report Period'
                                 }
+                                $batch += $exchangeObject
+
+                                if ($batch.Count -ge $Config.BathSettings.BatchSize) {
+                                    Write-Log "Writing batch of $($batch.Count) records into SQLServer ..." -ForegroundColor Cyan
+                                    Write-ToSqlTable -TableName $ReportName -Data $batch
+                                    $RowsInserted += $batch.Count
+                                    $batch = @()
+                                }
+
                             }
                             catch {
-                                Write-Log "Error while recovering department for $UserPrincipalName : $_" -ForegroundColor Yellow
+                                Write-Log "Error while recovering department for $UserPrincipalName : $_" -ForegroundColor Red
                             }
                         }
 
                         if ($batch.Count -gt 0) {
                             Write-Log "Writing final batch of $($batch.Count) records into SQLServer ..." -ForegroundColor Cyan
                             Write-ToSqlTable -TableName $ReportName -Data $batch
-                            $condition = $false
+                            $RowsInserted += $batch.Count
                         }
 
+                        $duration = (Get-Date) - $TaskStart
+                        $durationJob = (Get-Date) - $TaskStartExchange
+                        $tableSize = Get-TableSizeMB -TableName $ReportName
                         $RowsRetrievedExchange = $Data.Count
-
+                        $status = if($RowsRetrievedExchange -eq $RowsInserted) {"SUCCESS"} else {"PARTIALLY"}
                         Write-ExecutionLog `
                             -ExecutionId $ExecutionId `
                             -ReportName $ReportName `
-                            -Status "SUCCESS" `
+                            -Status $status `
                             -RowsRetrieved $RowsRetrievedExchange `
                             -RowsInserted $RowsInserted `
-                            -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
+                            -DurationTimeJob  $($durationJob.ToString('hh\:mm\:ss')) `
+                            -TableSizeMB $tableSize
                     }
                     elseif ($ReportName -eq "MicrosoftOneDrive") {
+                        $TaskStartOneDrive = Get-Date
+
                         $batch = @()
 
                         foreach ($Row in $Data) {
@@ -1183,11 +1002,10 @@ try {
                             }
 
                             $EncodedUpn = [System.Uri]::EscapeDataString($UserPrincipalName)
-                            $Url = "https://graph.microsoft.com/v1.0/users/"+$EncodedUpn+"?`$select=department"
+                            $Url = "https://graph.microsoft.com/v1.0/users/"+$EncodedUpn+"?`$select=department,country"
 
                             try {
                                 $Response = Invoke-CustomGraphRequest -Url $Url -Headers $UserHeaders
-                                $UserDepartment = $Response.department
 
                                 $oneDriveObject = [PSCustomObject]@{
                                     StorageUsedGB            = $StorageUsedGB
@@ -1203,7 +1021,8 @@ try {
                                     Storage_Allocated__Byte_ = $Row.'Storage Allocated (Byte)'
                                     Owner_Principal_Name     = $Row.'Owner Principal Name'
                                     Report_Period            = $Row.'Report Period'
-                                    department               = $UserDepartment
+                                    department               = $Response.department
+                                    countryOrRegion          = $Response.country
                                     ReportPeriod             = $Period
                                     ReportDate               = $RefreshDate
                                     InsertedAt               = (Get-Date)
@@ -1229,21 +1048,26 @@ try {
                             $RowsInserted += $batch.Count
                         }
 
+                        $duration = (Get-Date) - $TaskStart
+                        $durationJob = (Get-Date) - $TaskStartOneDrive
+                        $tableSize = Get-TableSizeMB -TableName $ReportName
                         $RowsRetrievedOneDrive = $Data.Count
-
+                        $status = if($RowsRetrievedOneDrive -eq $RowsInserted) {"SUCCESS"} else {"PARTIALLY"}
                         Write-ExecutionLog `
                             -ExecutionId $ExecutionId `
                             -ReportName $ReportName `
-                            -Status "SUCCESS" `
+                            -Status $status `
                             -RowsRetrieved $RowsRetrievedOneDrive `
                             -RowsInserted $RowsInserted `
-                            -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
+                            -DurationTimeJob  $($durationJob.ToString('hh\:mm\:ss')) `
+                            -TableSizeMB $tableSize
                     }
                     else {
+                        $TaskStartSharePoint = Get-Date
+
                         $batch = @()
 
                         foreach ($Row in $Data) {
-                            $RootWebTemplate = $Row.'Root Web Template'
 
                             $ReportRefreshDate = ($Row.PSObject.Properties |
                                 Where-Object { $_.Name -like "*Report Refresh Date*" }).Name
@@ -1256,17 +1080,15 @@ try {
 
                             $UserDepartment = "NULL"
 
-                            if ($RootWebTemplate -eq "Site Page Publishing") {
-                                $EncodedUpn = [System.Uri]::EscapeDataString($UserPrincipalName)
-                                $Url = "https://graph.microsoft.com/v1.0/users/"+$EncodedUpn+"?`$select=department"
+                            $EncodedUpn = [System.Uri]::EscapeDataString($UserPrincipalName)
+                            $Url = "https://graph.microsoft.com/v1.0/users/"+$EncodedUpn+"?`$select=department,country"
 
-                                try {
-                                    $Response = Invoke-CustomGraphRequest -Url $Url -Headers $UserHeaders
-                                    $UserDepartment = $Response.department
-                                } 
-                                catch {
-                                    Write-Log "Error while recovering department for $UserPrincipalName : $_" -ForegroundColor Yellow
-                                }
+                            try {
+                                $Response = Invoke-CustomGraphRequest -Url $Url -Headers $UserHeaders
+                                $UserDepartment = $Response.department
+                            } 
+                            catch {
+                                Write-Log "Error while recovering department for $UserPrincipalName : $_" -ForegroundColor Yellow
                             }
 
                             $sharePointObject = [PSCustomObject]@{
@@ -1287,6 +1109,7 @@ try {
                                 Visited_Page_Count       = $Row.'Visited Page Count'
                                 Root_Web_Template        = $RootWebTemplate
                                 department               = $UserDepartment
+                                countryOrRegion          = $Response.country
                                 ReportPeriod             = $Period
                                 ReportDate               = $RefreshDate
                                 InsertedAt               = (Get-Date)
@@ -1308,22 +1131,26 @@ try {
                             $RowsInserted += $batch.Count
                         }
 
+                        $duration = (Get-Date) - $TaskStart
+                        $durationJob = (Get-Date) - $TaskStartSharePoint
+                        $tableSize = Get-TableSizeMB -TableName $ReportName
                         $RowsRetrievedSharePoint = $Data.Count
-
+                        $status = if($RowsRetrievedSharePoint -eq $RowsInserted) {"SUCCESS"} else {"PARTIALLY"}
                         Write-ExecutionLog `
                             -ExecutionId $ExecutionId `
                             -ReportName $ReportName `
-                            -Status "SUCCESS" `
+                            -Status $status `
                             -RowsRetrieved $RowsRetrievedSharePoint `
                             -RowsInserted $RowsInserted `
-                            -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
+                            -DurationTimeJob  $($durationJob.ToString('hh\:mm\:ss')) `
+                            -TableSizeMB $tableSize
                     }
 
-                    $TotalRowsRetrieved += $RowsRetrievedExchange
-                    $TotalRowsRetrieved += $RowsRetrievedOneDrive
-                    $TotalRowsRetrieved += $RowsRetrievedSharePoint
+                    $Config.Sql.TotalRowsRetrieved += $RowsRetrievedExchange
+                    $Config.Sql.TotalRowsRetrieved += $RowsRetrievedOneDrive
+                    $Config.Sql.TotalRowsRetrieved += $RowsRetrievedSharePoint
 
-                    $TotalRowsInserted += $RowsInserted
+                    $Config.Sql.TotalRowsInserted += $RowsInserted
                 }
                 else {
                     Write-Log "No data returned for $ReportName" -ForegroundColor Yellow
@@ -1335,8 +1162,8 @@ try {
             Write-ExecutionLog `
                 -ExecutionId $ExecutionId `
                 -ReportName $ReportName `
-                -RowsRetrieved 0 `
-                -RowsInserted 0 `
+                -RowsRetrieved $Config.Sql.TotalRowsRetrieved `
+                -RowsInserted $Config.Sql.TotalRowsInserted `
                 -Status "FAILED" `
                 -ErrorMessage $_.Exception.Message
             throw
@@ -1348,6 +1175,7 @@ try {
     ***************************************
     STEP 2 - CASE: Users
     *************************************** " -ForegroundColor Magenta
+    $TaskStartUsers = Get-Date
     $AccessToken = Get-ValidGraphToken
     $UserHeaders = @{
         Authorization    = "Bearer $AccessToken"
@@ -1403,16 +1231,20 @@ try {
             $RowsInserted += $batch.Count
         }
 
-        $TotalRowsInsertedUsers = $RowsInserted
+        $duration = (Get-Date) - $TaskStart
+        $durationJob = (Get-Date) - $TaskStartUsers
+        $tableSize = Get-TableSizeMB -TableName $ReportName
+        $Config.Sql.TotalRowsInsertedUsers = $RowsInserted
         $TotalRowsRetrievedUsers = $AllUsers.Count
-
+        $status = if($TotalRowsRetrievedUsers -eq $Config.Sql.TotalRowsInsertedUsers) {"SUCCESS"} else {"PARTIALLY"}
         Write-ExecutionLog `
             -ExecutionId $ExecutionId `
             -ReportName $UsersTable `
-            -Status "SUCCESS" `
+            -Status $status `
             -RowsRetrieved $TotalRowsRetrievedUsers `
             -RowsInserted $RowsInserted `
-            -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
+            -DurationTimeJob  $($durationJob.ToString('hh\:mm\:ss')) `
+            -TableSizeMB $UsersTable
     }
     catch {
         Write-Log "Script failed to process $UsersTable data: $($_.Exception.Message)" -ForegroundColor Red
@@ -1420,28 +1252,32 @@ try {
             -ExecutionId $ExecutionId `
             -ReportName $UsersTable `
             -Status "FAILED" `
-            -RowsRetrieved 0 `
-            -RowsInserted 0 `
+            -RowsRetrieved $TotalRowsRetrievedUsers `
+            -RowsInserted $RowsInserted `
             -ErrorMessage $_.Exception.Message
         throw
     }
-    
+
+    $duration = (Get-Date) - $TaskStart
+    $totalRetrieved = ($Config.Sql.TotalRowsRetrieved + $TotalRowsRetrievedUsers)
+    $totalInserted = ($Config.Sql.TotalRowsInserted + $Config.Sql.TotalRowsInsertedUsers)
+    $status = if($totalRetrieved -eq $totalInserted) {"SUCCESS"} else {"PARTIALLY"}
     Write-ExecutionLog `
             -ExecutionId $ExecutionId `
             -ReportName "TOTAL" `
-            -Status "SUCCESS" `
-            -RowsRetrieved ($TotalRowsRetrieved + $TotalRowsRetrievedUsers) `
-            -RowsInserted ($TotalRowsInserted + $TotalRowsInsertedUsers) `
-            -DurationSeconds ([int]((Get-Date) - $TaskStart).TotalSeconds)
+            -Status $status `
+            -RowsRetrieved $totalRetrieved `
+            -RowsInserted $totalRetrieved `
+            -DurationTimeJob  $($duration.ToString('hh\:mm\:ss'))
 
     Write-Log "
     ***************************************
-    STEP 3 - Creating final metrics for PowerBI
+    STEP 3 - Creating final tables for PowerBI
     ***************************************" -ForegroundColor Magenta
-    Write-Log "Creating tables for PowerBI ..." -ForegroundColor Cyan
+    Write-Log "Creating data models for PowerBI ..." -ForegroundColor Cyan
     CreatePowerBIDataModelHistory
     CreatePowerBIDataModelCountryOrRegion
-    Write-Log "Tables created successfully" -ForegroundColor Green
+    Write-Log "Data models created successfully" -ForegroundColor Green
     
     Write-Log "=== END DATACARE ETL ===" -ForegroundColor Green
 }
@@ -1451,8 +1287,8 @@ catch {
             -ExecutionId $ExecutionId `
             -ReportName "TOTAL" `
             -Status "FAILED" `
-            -RowsRetrieved 0 `
-            -RowsInserted 0 `
+            -RowsRetrieved ($Config.Sql.TotalRowsRetrieved + $TotalRowsRetrievedUsers) `
+            -RowsInserted ($Config.Sql.TotalRowsInserted + $Config.Sql.TotalRowsInsertedUsers) `
             -ErrorMessage $_.Exception.Message
     throw
 }
