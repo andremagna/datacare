@@ -803,7 +803,7 @@ function Get-ValidGraphToken {
         Write-Log "Graph token near expiry (remaining: $([int]$remaining) min) → refreshing..." -ForegroundColor Yellow
     }
     else {
-        Write-Log "No cached token → requesting new one..." -ForegroundColor Yellow
+        Write-Log "No cached token, requesting new one..." -ForegroundColor Yellow
     }
 
     $Config.GraphExecution.GraphToken = $null
@@ -839,7 +839,7 @@ function Invoke-CustomGraphRequest {
     catch {
         $statusCode = $_.Exception.Response.StatusCode.value__
         if ($statusCode -eq 401) {
-            Write-Log "401 detected → refreshing Graph token..." -ForegroundColor Yellow
+            Write-Log "401 detected, refreshing Graph token..." -ForegroundColor Yellow
 
             $newToken = Get-ValidGraphToken
             $Headers["Authorization"] = "Bearer $newToken"
