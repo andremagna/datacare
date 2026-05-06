@@ -968,6 +968,7 @@ try {
                         $duration = (Get-Date) - $TaskStart
                         $durationJob = (Get-Date) - $TaskStartExchange
                         $tableSize = Get-TableSizeMB -TableName $ReportName
+                        $totTableSize += $tableSize
                         $RowsRetrievedExchange = $Data.Count
                         $status = if($RowsRetrievedExchange -eq $RowsInserted) {"SUCCESS"} else {"PARTIALLY"}
                         Write-ExecutionLog `
@@ -1044,6 +1045,7 @@ try {
                         $duration = (Get-Date) - $TaskStart
                         $durationJob = (Get-Date) - $TaskStartOneDrive
                         $tableSize = Get-TableSizeMB -TableName $ReportName
+                        $totTableSize += $tableSize
                         $RowsRetrievedOneDrive = $Data.Count
                         $status = if($RowsRetrievedOneDrive -eq $RowsInserted) {"SUCCESS"} else {"PARTIALLY"}
                         Write-ExecutionLog `
@@ -1127,6 +1129,7 @@ try {
                         $duration = (Get-Date) - $TaskStart
                         $durationJob = (Get-Date) - $TaskStartSharePoint
                         $tableSize = Get-TableSizeMB -TableName $ReportName
+                        $totTableSize += $tableSize
                         $RowsRetrievedSharePoint = $Data.Count
                         $status = if($RowsRetrievedSharePoint -eq $RowsInserted) {"SUCCESS"} else {"PARTIALLY"}
                         Write-ExecutionLog `
@@ -1226,7 +1229,8 @@ try {
 
         $duration = (Get-Date) - $TaskStart
         $durationJob = (Get-Date) - $TaskStartUsers
-        $tableSize = Get-TableSizeMB -TableName $ReportName
+        $tableSize = Get-TableSizeMB -TableName $UsersTable
+        $totTableSize += $tableSize
         $Config.Sql.TotalRowsInsertedUsers = $RowsInserted
         $TotalRowsRetrievedUsers = $AllUsers.Count
         $status = if($TotalRowsRetrievedUsers -eq $Config.Sql.TotalRowsInsertedUsers) {"SUCCESS"} else {"PARTIALLY"}
@@ -1237,7 +1241,7 @@ try {
             -RowsRetrieved $TotalRowsRetrievedUsers `
             -RowsInserted $RowsInserted `
             -DurationTimeJob  $($durationJob.ToString('hh\:mm\:ss')) `
-            -TableSizeMB $UsersTable
+            -TableSizeMB $tableSize
     }
     catch {
         Write-Log "Script failed to process $UsersTable data: $($_.Exception.Message)" -ForegroundColor Red
@@ -1261,7 +1265,8 @@ try {
             -Status $status `
             -RowsRetrieved $totalRetrieved `
             -RowsInserted $totalRetrieved `
-            -DurationTimeJob  $($duration.ToString('hh\:mm\:ss'))
+            -DurationTimeJob  $($duration.ToString('hh\:mm\:ss')) `
+            -TableSizeMB $totTableSize
 
     Write-Log "
     ***************************************
