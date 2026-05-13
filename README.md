@@ -75,11 +75,9 @@ datacare/
 
 ### Exchange Online
 
-* Mailbox usage
-* Primary & archive statistics
-* Recoverable items
-* System messages
-
+* Item count
+* Deleted item count
+  
 ### OneDrive
 
 * Storage usage
