@@ -309,7 +309,7 @@ function Import-RequiredModule {
 }
 
 # SQLSERVER
-function Test-SqlConnection {
+function SSMS-TestConnection {
     try {
         Invoke-Sqlcmd -ServerInstance $Config.Sql.Server -Database $Config.Sql.SqlDBTarget
         Write-Log "SQL Server connection successful" -ForegroundColor Green
@@ -321,7 +321,7 @@ function Test-SqlConnection {
     }
 }
 
-function Database-Init {
+function SSMS-Init {
     Write-Log "Ensuring database $($Config.Sql.SqlDBTarget) exists..." Cyan
 
     $createDbQuery = @"
@@ -366,7 +366,7 @@ IF DB_ID(N'$($Config.Sql.SqlDBTarget)') IS NULL
     Write-Log "Database initialization completed" Green
 }
 
-function DatabaseTable-DropIfNotEmpty {
+function SSMS-DropIfNotEmpty {
     $Tables = @{
         MicrosoftExchange   = $Config.Sql.CreateTable_Exchange
         MicrosoftOneDrive   = $Config.Sql.CreateTable_OneDrive
@@ -379,7 +379,7 @@ function DatabaseTable-DropIfNotEmpty {
         $createQuery = $table.Value
         $tableName = "dbo.$tableKey"
 
-        $count = Get-ReportCountFromDb -Table $tableKey
+        $count = SSMS-GetReportCountFromDb -Table $tableKey
         if ($count -gt 0) {
             Write-Log "Number of records in $tableName : $count. Dropping and recreating $tableName table..." Yellow
             $dropQuery = "IF OBJECT_ID('$tableName','U') IS NOT NULL DROP TABLE $tableName;"
@@ -392,13 +392,13 @@ function DatabaseTable-DropIfNotEmpty {
     }
 }
 
-function NormalizeData {
+function SSMS-NormalizeData {
     param([string]$Attribute)
     if ([string]::IsNullOrEmpty($Attribute)) { return "" }
     return ($Attribute.ToLower() -replace '[^a-z0-9]')
 }
 
-function Write-ToSqlTable {
+function SSMS-WriteToSqlTable {
     param (
         [Parameter(Mandatory)][string]$TableName,
         [Parameter(Mandatory)][array]$Data
@@ -431,7 +431,7 @@ function Write-ToSqlTable {
 
         $propertyMap = @{}
         foreach ($prop in $Data[0].PSObject.Properties) {
-            $normalized = NormalizeData $prop.Name
+            $normalized = SSMS-NormalizeData $prop.Name
             if (-not $propertyMap.ContainsKey($normalized)) {
                 $propertyMap[$normalized] = $prop.Name
             }
@@ -485,7 +485,7 @@ function Write-ToSqlTable {
                     continue
                 }
 
-                $normalizedTarget = NormalizeData $sqlCol
+                $normalizedTarget = SSMS-NormalizeData $sqlCol
                 if ($propertyMap.ContainsKey($normalizedTarget)) {
                     $value = $row.($propertyMap[$normalizedTarget])
                     if ($null -eq $value -or $value -eq "") {
@@ -522,7 +522,7 @@ function Write-ToSqlTable {
     }
 }
 
-function Get-ReportCountFromDb {
+function SSMS-GetReportCountFromDb {
     param(
         [Parameter(Mandatory=$true)]
         [string]$Table
@@ -554,7 +554,7 @@ function Get-ReportCountFromDb {
     }
 }
 
-function Get-TableSizeMB {
+function SSMS-GetTableSizeMB {
     param(
         [Parameter(Mandatory = $true)]
         [string]$TableName,
@@ -587,7 +587,7 @@ AND s.name = '$Schema'
 }
 
 # STORED PROCEDURE
-function CreatePowerBIDataModelHistory {
+function SP-CreatePowerBIDataModelHistory {
     $query = @"
 IF OBJECT_ID('$($Config.Sql.SqlDBTarget).dbo.PowerBIDataModelHistory', 'U') IS NULL
 BEGIN
@@ -633,7 +633,7 @@ FROM
         SUM(ISNULL([Deleted_Item_Count],0)) AS Exchange_Deleted_Item_Count,
         SUM(ISNULL([DeletedItemSizeGB],0)) AS Exchange_DeletedItemSizeGB
     FROM [$($Config.Sql.SqlDBTarget)].[dbo].[MicrosoftExchange]
-    WHERE CountryOrRegion != 'Russia'
+    WHERE CountryOrRegion != 'Russia' AND Display_Name not like '%guest%'
     GROUP BY ISNULL(department,'Unknown')
 ) e
 LEFT JOIN
@@ -643,7 +643,7 @@ LEFT JOIN
         SUM(ISNULL([File_Count],0)) AS OneDrive_Total_File_Count,
         SUM(ISNULL([StorageUsedGB],0)) AS OneDrive_Total_StorageUsedGB
     FROM [$($Config.Sql.SqlDBTarget)].[dbo].[MicrosoftOneDrive]
-    WHERE CountryOrRegion != 'Russia'
+    WHERE CountryOrRegion != 'Russia' AND Owner_Display_Name not like '%guest%'
     GROUP BY ISNULL(department,'Unknown')
 ) o ON e.department = o.department
 LEFT JOIN
@@ -671,7 +671,7 @@ LEFT JOIN
     Write-Log "[$($Config.Sql.SqlDBTarget)].[dbo].[PowerBIDataModelHistory] table created successfully." Green
 }
 
-function CreatePowerBIDataModelCountryOrRegion {
+function SP-CreatePowerBIDataModelCountryOrRegion {
     $queryCountryOrRegion = "
         INSERT INTO dbo.PowerBICountryOrRegion (Department, CountryName, CountryCount)
         SELECT 
@@ -680,6 +680,7 @@ function CreatePowerBIDataModelCountryOrRegion {
             COUNT(*) AS CountryCount
         FROM dbo.MicrosoftUsers
         WHERE CountryOrRegion IS NOT NULL
+        AND CountryOrRegion NOT LIKE '%Russia%'
         GROUP BY ISNULL(Department, 'Unknown'), CountryOrRegion
         ORDER BY Department, CountryCount DESC;
     "
@@ -688,7 +689,7 @@ function CreatePowerBIDataModelCountryOrRegion {
 }
 
 # ENTRAID
-function Get-GraphAccessToken {
+function MS-GetGraphAccessToken {
     Write-Log "Requesting Microsoft Graph token using certificate..." Cyan
 
     try {
@@ -789,7 +790,7 @@ function Get-GraphAccessToken {
     }
 }
 
-function Get-ValidGraphToken {
+function MS-GetValidGraphToken {
     $now = Get-Date
 
     if ($Config.GraphExecution.GraphToken -and $Config.GraphExecution.GraphTokenCreatedAt) {
@@ -810,9 +811,9 @@ function Get-ValidGraphToken {
     $Config.GraphExecution.GraphTokenCreatedAt = $null
 
     try {
-        $token = Get-GraphAccessToken
+        $token = MS-GetGraphAccessToken
         if ([string]::IsNullOrEmpty($token)) {
-            throw "Empty token returned from Get-GraphAccessToken"
+            throw "Empty token returned from MS-GetGraphAccessToken"
         }
 
         $Config.GraphExecution.GraphToken = $token
@@ -827,7 +828,7 @@ function Get-ValidGraphToken {
     }
 }
 
-function Invoke-CustomGraphRequest {
+function MS-InvokeCustomGraphRequest {
     param (
         [string]$Url,
         [hashtable]$Headers
@@ -841,7 +842,7 @@ function Invoke-CustomGraphRequest {
         if ($statusCode -eq 401) {
             Write-Log "401 detected, refreshing Graph token..." -ForegroundColor Yellow
 
-            $newToken = Get-ValidGraphToken
+            $newToken = MS-GetValidGraphToken
             $Headers["Authorization"] = "Bearer $newToken"
 
             return Invoke-RestMethod -Uri $Url -Headers $Headers -Method GET
@@ -852,7 +853,6 @@ function Invoke-CustomGraphRequest {
     }
 }
 
-
 # ======================
 #           MAIN
 # ======================
@@ -862,14 +862,14 @@ try {
     $ExecutionId = [guid]::NewGuid()
 
     Import-RequiredModule -ModuleName "SqlServer"
-    if (-not (Test-SqlConnection)) {
+    if (-not (SSMS-TestConnection)) {
         Write-Log "SQL connection failed." -ForegroundColor Red
         throw "SQL connection failed."
     }
-    Database-Init
-    DatabaseTable-DropIfNotEmpty
+    SSMS-Init
+    SSMS-DropIfNotEmpty
 
-    $AccessToken = Get-ValidGraphToken
+    $AccessToken = MS-GetValidGraphToken
     $ReportHeaders = @{
         Authorization = "Bearer $AccessToken"
         Accept        = "text/csv"
@@ -892,7 +892,7 @@ try {
         STEP 1 - CASE: $ReportName
         ***************************************" -ForegroundColor Magenta
         try {
-            $Response = Invoke-CustomGraphRequest -Url $Reports[$ReportName] -Headers $ReportHeaders
+            $Response = MS-InvokeCustomGraphRequest -Url $Reports[$ReportName] -Headers $ReportHeaders
             if ($Response) {
                 $Data = $Response | ConvertFrom-Csv
                 if ($Data -and $Data.Count -gt 0) {
@@ -920,7 +920,7 @@ try {
                             $Url = "https://graph.microsoft.com/v1.0/users/"+$EncodedUpn+"?`$select=department,country"
 
                             try {
-                                $Response = Invoke-CustomGraphRequest -Url $Url -Headers $UserHeaders
+                                $Response = MS-InvokeCustomGraphRequest -Url $Url -Headers $UserHeaders
 
                                 $exchangeObject = [PSCustomObject]@{
                                     displayName                 = $Row.'Display Name'
@@ -948,7 +948,7 @@ try {
 
                                 if ($batch.Count -ge $Config.BathSettings.BatchSize) {
                                     Write-Log "Writing batch of $($batch.Count) records into SQLServer ..." -ForegroundColor Cyan
-                                    Write-ToSqlTable -TableName $ReportName -Data $batch
+                                    SSMS-WriteToSqlTable -TableName $ReportName -Data $batch
                                     $RowsInserted += $batch.Count
                                     $batch = @()
                                 }
@@ -961,13 +961,13 @@ try {
 
                         if ($batch.Count -gt 0) {
                             Write-Log "Writing final batch of $($batch.Count) records into SQLServer ..." -ForegroundColor Cyan
-                            Write-ToSqlTable -TableName $ReportName -Data $batch
+                            SSMS-WriteToSqlTable -TableName $ReportName -Data $batch
                             $RowsInserted += $batch.Count
                         }
 
                         $duration = (Get-Date) - $TaskStart
                         $durationJob = (Get-Date) - $TaskStartExchange
-                        $tableSize = Get-TableSizeMB -TableName $ReportName
+                        $tableSize = SSMS-GetTableSizeMB -TableName $ReportName
                         $totTableSize += $tableSize
                         $RowsRetrievedExchange = $Data.Count
                         $status = if($RowsRetrievedExchange -eq $RowsInserted) {"SUCCESS"} else {"PARTIALLY"}
@@ -999,7 +999,7 @@ try {
                             $Url = "https://graph.microsoft.com/v1.0/users/"+$EncodedUpn+"?`$select=department,country"
 
                             try {
-                                $Response = Invoke-CustomGraphRequest -Url $Url -Headers $UserHeaders
+                                $Response = MS-InvokeCustomGraphRequest -Url $Url -Headers $UserHeaders
 
                                 $oneDriveObject = [PSCustomObject]@{
                                     StorageUsedGB            = $StorageUsedGB
@@ -1026,7 +1026,7 @@ try {
 
                                 if ($batch.Count -ge $Config.BathSettings.BatchSize) {
                                     Write-Log "Writing batch of $($batch.Count) $ReportName records into SQLServer ..." -ForegroundColor Cyan
-                                    Write-ToSqlTable -TableName $ReportName -Data $batch
+                                    SSMS-WriteToSqlTable -TableName $ReportName -Data $batch
                                     $RowsInserted += $batch.Count
                                     $batch = @()
                                 }
@@ -1038,13 +1038,13 @@ try {
 
                         if ($batch.Count -gt 0) {
                             Write-Log "Final flush: writing $($batch.Count) $ReportName records into SQLServer ..." -ForegroundColor Cyan
-                            Write-ToSqlTable -TableName $ReportName -Data $batch
+                            SSMS-WriteToSqlTable -TableName $ReportName -Data $batch
                             $RowsInserted += $batch.Count
                         }
 
                         $duration = (Get-Date) - $TaskStart
                         $durationJob = (Get-Date) - $TaskStartOneDrive
-                        $tableSize = Get-TableSizeMB -TableName $ReportName
+                        $tableSize = SSMS-GetTableSizeMB -TableName $ReportName
                         $totTableSize += $tableSize
                         $RowsRetrievedOneDrive = $Data.Count
                         $status = if($RowsRetrievedOneDrive -eq $RowsInserted) {"SUCCESS"} else {"PARTIALLY"}
@@ -1079,7 +1079,7 @@ try {
                             $Url = "https://graph.microsoft.com/v1.0/users/"+$EncodedUpn+"?`$select=department,country"
 
                             try {
-                                $Response = Invoke-CustomGraphRequest -Url $Url -Headers $UserHeaders
+                                $Response = MS-InvokeCustomGraphRequest -Url $Url -Headers $UserHeaders
                                 $UserDepartment = $Response.department
                             } 
                             catch {
@@ -1114,7 +1114,7 @@ try {
 
                             if ($batch.Count -ge $Config.BathSettings.BatchSize) {
                                 Write-Log "Writing batch of $($batch.Count) $ReportName records into SQLServer ..." -ForegroundColor Cyan
-                                Write-ToSqlTable -TableName $ReportName -Data $batch
+                                SSMS-WriteToSqlTable -TableName $ReportName -Data $batch
                                 $RowsInserted += $batch.Count
                                 $batch = @()
                             }
@@ -1122,13 +1122,13 @@ try {
 
                         if ($batch.Count -gt 0) {
                             Write-Log "Final flush: writing $($batch.Count) $ReportName records into SQLServer ..." -ForegroundColor Cyan
-                            Write-ToSqlTable -TableName $ReportName -Data $batch
+                            SSMS-WriteToSqlTable -TableName $ReportName -Data $batch
                             $RowsInserted += $batch.Count
                         }
 
                         $duration = (Get-Date) - $TaskStart
                         $durationJob = (Get-Date) - $TaskStartSharePoint
-                        $tableSize = Get-TableSizeMB -TableName $ReportName
+                        $tableSize = SSMS-GetTableSizeMB -TableName $ReportName
                         $totTableSize += $tableSize
                         $RowsRetrievedSharePoint = $Data.Count
                         $status = if($RowsRetrievedSharePoint -eq $RowsInserted) {"SUCCESS"} else {"PARTIALLY"}
@@ -1172,7 +1172,7 @@ try {
     STEP 2 - CASE: Users
     *************************************** " -ForegroundColor Magenta
     $TaskStartUsers = Get-Date
-    $AccessToken = Get-ValidGraphToken
+    $AccessToken = MS-GetValidGraphToken
     $UserHeaders = @{
         Authorization    = "Bearer $AccessToken"
         ConsistencyLevel = "eventual"
@@ -1183,7 +1183,7 @@ try {
     $Url = "https://graph.microsoft.com/v1.0/users?`$select=id,displayName,userPrincipalName,mail,department,jobTitle,accountEnabled,createdDateTime,country"
 
     do {
-        $Response = Invoke-CustomGraphRequest -Url $Url -Headers $UserHeaders
+        $Response = MS-InvokeCustomGraphRequest -Url $Url -Headers $UserHeaders
         if ($Response -and $Response.value) {
             $AllUsers += $Response.value
             $Url = $Response.'@odata.nextLink'
@@ -1215,7 +1215,7 @@ try {
 
             if ($batch.Count -ge $Config.BathSettings.BatchSize) {
                 Write-Log "Writing batch of $($batch.Count) users into SQLServer ..." -ForegroundColor Cyan
-                Write-ToSqlTable -TableName $UsersTable -Data $batch
+                SSMS-WriteToSqlTable -TableName $UsersTable -Data $batch
                 $RowsInserted += $batch.Count
                 $batch = @()
             }
@@ -1223,13 +1223,13 @@ try {
 
         if ($batch.Count -gt 0) {
             Write-Log "Final flush: writing $($batch.Count) users into SQLServer ..." -ForegroundColor Cyan
-            Write-ToSqlTable -TableName $UsersTable -Data $batch
+            SSMS-WriteToSqlTable -TableName $UsersTable -Data $batch
             $RowsInserted += $batch.Count
         }
 
         $duration = (Get-Date) - $TaskStart
         $durationJob = (Get-Date) - $TaskStartUsers
-        $tableSize = Get-TableSizeMB -TableName $UsersTable
+        $tableSize = SSMS-GetTableSizeMB -TableName $UsersTable
         $totTableSize += $tableSize
         $Config.Sql.TotalRowsInsertedUsers = $RowsInserted
         $TotalRowsRetrievedUsers = $AllUsers.Count
@@ -1273,8 +1273,8 @@ try {
     STEP 3 - Creating final tables for PowerBI
     ***************************************" -ForegroundColor Magenta
     Write-Log "Creating data models for PowerBI ..." -ForegroundColor Cyan
-    CreatePowerBIDataModelHistory
-    CreatePowerBIDataModelCountryOrRegion
+    SP-CreatePowerBIDataModelCountryOrRegion
+    SP-CreatePowerBIDataModelHistory
     Write-Log "Data models created successfully" -ForegroundColor Green
     
     Write-Log "=== END DATACARE ETL ===" -ForegroundColor Green
